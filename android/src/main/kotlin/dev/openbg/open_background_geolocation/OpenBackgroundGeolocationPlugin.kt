@@ -102,6 +102,10 @@ class OpenBackgroundGeolocationPlugin :
                 result.success(Settings.stateMap())
             }
             "start" -> start(result)
+            "startGeofences" -> {
+                TrackingEngine.startGeofences(context)
+                result.success(Settings.stateMap())
+            }
             "stop" -> {
                 TrackingEngine.stop(context)
                 result.success(Settings.stateMap())
@@ -133,6 +137,29 @@ class OpenBackgroundGeolocationPlugin :
             "insertLocation" -> result.success(TrackingEngine.insertLocation(context, args as Map<*, *>))
             "destroyLocation" -> result.success(Db.delete(args as String))
             "destroyLocations" -> result.success(Db.deleteAll())
+            "addGeofence" -> GeofenceManager.add(context, listOf(args as Map<*, *>)) { ok, err ->
+                if (ok) result.success(true) else result.error("GEOFENCE_ERROR", err, null)
+            }
+            "addGeofences" -> GeofenceManager.add(context, (args as List<*>).map { it as Map<*, *> }) { ok, err ->
+                if (ok) result.success(true) else result.error("GEOFENCE_ERROR", err, null)
+            }
+            "geofenceExists" -> result.success(GeofenceManager.get(context, args as String) != null)
+            "getGeofence" -> result.success(GeofenceManager.get(context, args as String))
+            "getGeofences" -> result.success(GeofenceManager.all(context))
+            "removeGeofence" -> GeofenceManager.remove(context, listOf(args as String)) { ok, err ->
+                if (ok) result.success(true) else result.error("GEOFENCE_ERROR", err, null)
+            }
+            "removeGeofences" -> GeofenceManager.remove(
+                context, (args as? List<*>)?.map { it as String }
+            ) { ok, err ->
+                if (ok) result.success(true) else result.error("GEOFENCE_ERROR", err, null)
+            }
+            "sync" -> HttpSync.sync(context) { records, err ->
+                // Called from the sync worker; Flutter replies must happen on the main thread.
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    if (err == null) result.success(records) else result.error("HTTP_ERROR", err, null)
+                }
+            }
             "getProviderState" -> result.success(TrackingEngine.providerState(context))
             "requestPermission" -> requestPermission { result.success(it) }
             // iOS-only / no-op on Android.

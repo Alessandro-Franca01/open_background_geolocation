@@ -9,6 +9,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
@@ -55,6 +57,7 @@ object TrackingEngine {
     private var elasticityFactor = 1.0
     private var providerReceiver: BroadcastReceiver? = null
     private var locationCallback: LocationCallback? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private var stopTimerArmed = false
     private val stopTimer = Runnable { stopTimerArmed = false; onStopTimeout() }
@@ -67,6 +70,7 @@ object TrackingEngine {
                 val json = buildLocation(it, "heartbeat", moving)
                 EventBus.emit("heartbeat", mapOf("location" to json.toMap()))
             }
+            HttpSync.autoSync(app) // heartbeat retries queued uploads
             main.postDelayed(this, interval * 1000L)
         }
     }
@@ -81,11 +85,28 @@ object TrackingEngine {
 
     fun start(ctx: Context) {
         init(ctx)
+        val wasEnabled = Settings.enabled
         Settings.enabled = true
         Settings.trackingMode = 1
         Settings.markBooted()
         TrackingService.start(app)
-        EventBus.emit("enabledchange", true)
+        GeofenceManager.init(app)
+        GeofenceManager.refresh(force = true)
+        if (!wasEnabled) EventBus.emit("enabledchange", true)
+    }
+
+    /** Geofence-only mode: no continuous location, no foreground service. */
+    fun startGeofences(ctx: Context) {
+        init(ctx)
+        val wasEnabled = Settings.enabled
+        Settings.enabled = true
+        Settings.trackingMode = 0
+        Settings.markBooted()
+        end()
+        TrackingService.stop(app)
+        GeofenceManager.init(app)
+        GeofenceManager.refresh(force = true)
+        if (!wasEnabled) EventBus.emit("enabledchange", true)
     }
 
     fun stop(ctx: Context) {
@@ -94,6 +115,8 @@ object TrackingEngine {
         Settings.enabled = false
         end()
         TrackingService.stop(app)
+        GeofenceManager.init(app)
+        GeofenceManager.unregisterAll()
         if (wasEnabled) EventBus.emit("enabledchange", false)
     }
 
@@ -109,6 +132,7 @@ object TrackingEngine {
         running = true
         fused = LocationServices.getFusedLocationProviderClient(app)
         registerProviderReceiver()
+        registerNetworkCallback()
         startActivityUpdates()
         enterMoving()
         scheduleHeartbeat()
@@ -126,6 +150,7 @@ object TrackingEngine {
         stopActivityUpdates()
         providerReceiver?.let { runCatching { app.unregisterReceiver(it) } }
         providerReceiver = null
+        unregisterNetworkCallback()
         moving = false
         Settings.isMoving = false
         lastLocation = null
@@ -268,11 +293,38 @@ object TrackingEngine {
         val data = json.toMap()
         EventBus.emit("location", data)
         if (event == "motionchange") EventBus.emit("motionchange", data)
+        HttpSync.autoSync(app)
     }
 
-    private fun persist(json: JSONObject, millis: Long) {
+    /** Last fix seen by the engine, or null if tracking has not produced one yet. */
+    fun lastKnown(): android.location.Location? = lastLocation
+
+    /** Records and publishes a geofence transition. [fence] is the stored geofence document. */
+    fun recordGeofence(loc: android.location.Location, id: String, action: String, fence: JSONObject) {
+        val now = isoTimestamp(System.currentTimeMillis())
+        val json = buildLocation(loc, "geofence", Settings.isMoving)
+        json.put("geofence", JSONObject().put("identifier", id).put("action", action).put("timestamp", now))
+        fence.optJSONObject("extras")?.let { json.put("extras", it) }
+        persist(json, loc.time, geofence = true)
+        EventBus.emit(
+            "geofence",
+            mapOf(
+                "identifier" to id,
+                "action" to action,
+                "location" to json.toMap(),
+                "geofence" to fence.toMap(),
+                "extras" to fence.optJSONObject("extras")?.toMap(),
+                "timestamp" to now,
+            )
+        )
+        HttpSync.autoSync(app)
+    }
+
+    private fun persist(json: JSONObject, millis: Long, geofence: Boolean = false) {
         val mode = Settings.string("persistence", "persistMode", "all").lowercase()
-        if (mode == "none" || mode == "geofence") return
+        if (mode == "none") return
+        if (geofence && mode == "location") return
+        if (!geofence && mode == "geofence") return
         Db.insert(json.getString("uuid"), millis, json)
         Db.purge(
             Settings.int("persistence", "maxDaysToPersist", 1),
@@ -506,6 +558,31 @@ object TrackingEngine {
             "status" to status,
             "accuracyAuthorization" to if (fine) 1 else 0,
         )
+    }
+
+    // ------------------------------------------------------------------ connectivity
+
+    private fun registerNetworkCallback() {
+        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                EventBus.emit("connectivitychange", mapOf("connected" to true))
+                HttpSync.autoSync(app) // flush records queued while offline
+            }
+
+            override fun onLost(network: Network) {
+                EventBus.emit("connectivitychange", mapOf("connected" to false))
+            }
+        }
+        networkCallback = cb
+        runCatching { cm.registerDefaultNetworkCallback(cb) }
+    }
+
+    private fun unregisterNetworkCallback() {
+        val cb = networkCallback ?: return
+        val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        runCatching { cm.unregisterNetworkCallback(cb) }
+        networkCallback = null
     }
 
     // ------------------------------------------------------------------ heartbeat

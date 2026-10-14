@@ -3,8 +3,8 @@
 Open source background location tracking, motion detection and geofencing plugin for Flutter.
 No license key, free in debug and release builds (MIT).
 
-> **Status: early development.** Only Android tracking is implemented, and it has not been
-> tested on a real device yet. See the roadmap below.
+> **Status: early development.** Android tracking, geofencing and HTTP sync are implemented but
+> have not been tested on a real device yet. See the roadmap below.
 
 This is an independent, clean-room implementation. It is not affiliated with, endorsed by, or
 derived from the code of any commercial SDK. See [docs/CLEAN_ROOM.md](docs/CLEAN_ROOM.md).
@@ -19,8 +19,8 @@ derived from the code of any commercial SDK. See [docs/CLEAN_ROOM.md](docs/CLEAN
 | Foreground service and notification | implemented, untested | n/a |
 | Local persistence (SQLite) | implemented | planned |
 | `getCurrentPosition`, `changePace` | implemented, untested | planned |
-| Geofencing | planned | planned |
-| HTTP sync (`autoSync`, batch) | planned | planned |
+| Geofencing (circular; enter / exit / dwell) | implemented, untested | planned |
+| HTTP sync (`autoSync`, batch, retry) | implemented, untested | planned |
 | `watchPosition`, schedule, headless | planned | planned |
 
 ## Usage
@@ -46,6 +46,12 @@ await bg.BackgroundGeolocation.start();
 - `minSdk` 21, `compileSdk` 35.
 - Declared permissions: fine/coarse/background location, activity recognition, foreground
   service (location), notifications, boot completed, internet.
+
+- Geofences: `notifyOnEntry` and `notifyOnExit` default to true, `notifyOnDwell` to false. Polygon
+  geofences are not supported. Play Services caps monitoring at 100 geofences; beyond 95 only the
+  nearest are active.
+- HTTP: a 2xx response deletes the uploaded records, anything else keeps them queued. Cleartext
+  `http://` URLs need `usesCleartextTraffic` in your app manifest.
 
 ## Roadmap
 

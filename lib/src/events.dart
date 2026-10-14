@@ -11,11 +11,19 @@ class GeofenceEvent {
   final Location location;
   final Map<String, dynamic>? extras;
 
+  /// The full geofence record that triggered the event, when provided by the platform.
+  final Geofence? geofence;
+
+  /// ISO-8601 UTC time at which the OS delivered the event.
+  final String timestamp;
+
   const GeofenceEvent({
     required this.identifier,
     required this.action,
     required this.location,
     this.extras,
+    this.geofence,
+    this.timestamp = '',
   });
 
   factory GeofenceEvent.fromMap(Object? raw) {
@@ -25,6 +33,8 @@ class GeofenceEvent {
       action: (m['action'] as String?) ?? '',
       location: Location.fromMap(_m(m['location'])),
       extras: m['extras'] == null ? null : _m(m['extras']),
+      geofence: m['geofence'] == null ? null : Geofence.fromMap(_m(m['geofence'])),
+      timestamp: (m['timestamp'] as String?) ?? '',
     );
   }
 }

@@ -29,13 +29,23 @@ class StationaryReceiver : BroadcastReceiver() {
     }
 }
 
+/** Delivers user-geofence transitions. */
+class GeofenceReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val event = GeofencingEvent.fromIntent(intent) ?: return
+        if (event.hasError()) return
+        GeofenceManager.onTransition(context, event)
+    }
+}
+
 /** Restarts tracking after reboot or app update when `startOnBoot` is set. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         TrackingEngine.init(context)
         if (Settings.enabled && Settings.bool("app", "startOnBoot")) {
             Settings.didDeviceReboot = intent.action == Intent.ACTION_BOOT_COMPLETED
-            TrackingEngine.start(context)
+            if (Settings.trackingMode == 0) TrackingEngine.startGeofences(context)
+            else TrackingEngine.start(context)
         }
     }
 }

@@ -24,6 +24,9 @@
             android:name="dev.openbg.open_background_geolocation.StationaryReceiver"
             android:exported="false" />
         <receiver
+            android:name="dev.openbg.open_background_geolocation.GeofenceReceiver"
+            android:exported="false" />
+        <receiver
             android:name="dev.openbg.open_background_geolocation.BootReceiver"
             android:exported="true">
             <intent-filter>

@@ -53,4 +53,37 @@ void main() {
     expect(s.trackingMode, TrackingMode.geofencesOnly);
     expect(s.isMoving, isFalse);
   });
+
+  test('GeofenceEvent.fromMap parses geofence record and timestamp', () {
+    final e = GeofenceEvent.fromMap({
+      'identifier': 'home',
+      'action': 'ENTER',
+      'timestamp': '2026-01-01T00:00:00.000Z',
+      'location': {
+        'uuid': 'u1',
+        'coords': {'latitude': 1.0, 'longitude': 2.0},
+        'geofence': {'identifier': 'home', 'action': 'ENTER', 'timestamp': 't'},
+      },
+      'geofence': {
+        'identifier': 'home',
+        'latitude': 1.0,
+        'longitude': 2.0,
+        'radius': 150,
+        'hits': 3,
+        'entryState': 1,
+      },
+    });
+    expect(e.action, 'ENTER');
+    expect(e.geofence?.hits, 3);
+    expect(e.geofence?.entryState, 1);
+    expect(e.location.geofence?.identifier, 'home');
+    expect(e.timestamp, '2026-01-01T00:00:00.000Z');
+  });
+
+  test('HttpEvent.fromMap reads status and body', () {
+    final e = HttpEvent.fromMap({'success': true, 'status': 201, 'responseText': 'ok'});
+    expect(e.success, isTrue);
+    expect(e.status, 201);
+    expect(e.responseText, 'ok');
+  });
 }

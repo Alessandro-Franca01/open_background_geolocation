@@ -162,6 +162,15 @@ class Geofence {
   final int? loiteringDelay;
   final Map<String, dynamic>? extras;
 
+  /// Runtime state maintained by the plugin: 0 = outside, 1 = inside.
+  final int? entryState;
+
+  /// Number of transitions since the geofence was added.
+  final int? hits;
+
+  /// Epoch seconds of the last transition.
+  final double? stateUpdatedAt;
+
   const Geofence({
     required this.identifier,
     this.latitude,
@@ -172,6 +181,9 @@ class Geofence {
     this.notifyOnDwell,
     this.loiteringDelay,
     this.extras,
+    this.entryState,
+    this.hits,
+    this.stateUpdatedAt,
   });
 
   factory Geofence.fromMap(Map<dynamic, dynamic> raw) {
@@ -186,6 +198,9 @@ class Geofence {
       notifyOnDwell: m['notifyOnDwell'] as bool?,
       loiteringDelay: (m['loiteringDelay'] as num?)?.toInt(),
       extras: m['extras'] == null ? null : _map(m['extras']),
+      entryState: (m['entryState'] as num?)?.toInt(),
+      hits: (m['hits'] as num?)?.toInt(),
+      stateUpdatedAt: (m['stateUpdatedAt'] as num?)?.toDouble(),
     );
   }
 
