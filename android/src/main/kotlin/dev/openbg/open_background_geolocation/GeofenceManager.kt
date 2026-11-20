@@ -109,11 +109,15 @@ object GeofenceManager {
                 .build()
             client.addGeofences(request, pendingIntent())
                 .addOnSuccessListener {
+                    Logger.i("geofence", "monitoring ${chosenIds.size} of ${all.size} geofence(s)")
                     active.addAll(chosenIds)
                     emitChange(on, off)
                     cb?.invoke(true, null)
                 }
-                .addOnFailureListener { cb?.invoke(false, it.message) }
+                .addOnFailureListener {
+                    Logger.e("geofence", "addGeofences failed: ${it.message}")
+                    cb?.invoke(false, it.message)
+                }
         }
     }
 
@@ -179,6 +183,7 @@ object GeofenceManager {
                     longitude = stored.getDouble("longitude")
                     time = System.currentTimeMillis()
                 }
+            Logger.i("geofence", "transition $action on '${g.requestId}'")
             stored.put("hits", stored.optInt("hits", 0) + 1)
             stored.put("entryState", if (action == "EXIT") 0 else 1)
             stored.put("stateUpdatedAt", System.currentTimeMillis() / 1000.0)

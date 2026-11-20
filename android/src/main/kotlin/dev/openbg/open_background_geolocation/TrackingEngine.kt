@@ -44,6 +44,7 @@ import kotlin.math.min
  */
 object TrackingEngine {
     private const val STATIONARY_FENCE_ID = "obg_stationary"
+    private const val TAG = "engine"
 
     private lateinit var app: Context
     private val main = Handler(Looper.getMainLooper())
@@ -56,6 +57,7 @@ object TrackingEngine {
     private var lastActivity: Pair<String, Int> = "unknown" to 0
     private var elasticityFactor = 1.0
     private var providerReceiver: BroadcastReceiver? = null
+    private var powerReceiver: BroadcastReceiver? = null
     private var locationCallback: LocationCallback? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
@@ -66,6 +68,7 @@ object TrackingEngine {
             if (!running) return
             val interval = Settings.int("app", "heartbeatInterval", -1)
             if (interval <= 0) return
+            Logger.d(TAG, "heartbeat moving=$moving lastFix=${lastLocation != null}")
             lastLocation?.let {
                 val json = buildLocation(it, "heartbeat", moving)
                 EventBus.emit("heartbeat", mapOf("location" to json.toMap()))
@@ -77,6 +80,7 @@ object TrackingEngine {
 
     fun init(ctx: Context) {
         app = ctx.applicationContext
+        EventBus.context = app
         Settings.init(app)
         Db.init(app)
     }
@@ -89,6 +93,7 @@ object TrackingEngine {
         Settings.enabled = true
         Settings.trackingMode = 1
         Settings.markBooted()
+        Logger.i(TAG, "start() requested (wasEnabled=$wasEnabled)")
         TrackingService.start(app)
         GeofenceManager.init(app)
         GeofenceManager.refresh(force = true)
@@ -102,6 +107,7 @@ object TrackingEngine {
         Settings.enabled = true
         Settings.trackingMode = 0
         Settings.markBooted()
+        Logger.i(TAG, "startGeofences() requested (wasEnabled=$wasEnabled)")
         end()
         TrackingService.stop(app)
         GeofenceManager.init(app)
@@ -113,15 +119,20 @@ object TrackingEngine {
         init(ctx)
         val wasEnabled = Settings.enabled
         Settings.enabled = false
+        Logger.i(TAG, "stop() requested (wasEnabled=$wasEnabled)")
+        stopAllWatchers()
         end()
         TrackingService.stop(app)
         GeofenceManager.init(app)
         GeofenceManager.unregisterAll()
         if (wasEnabled) EventBus.emit("enabledchange", false)
+        // Let the final `enabledchange` reach the headless task before the engine goes away.
+        main.postDelayed({ if (!Settings.enabled) HeadlessTask.shutdown() }, 2000)
     }
 
     fun changePace(isMoving: Boolean) {
         if (!running) return
+        Logger.i(TAG, "changePace(isMoving=$isMoving) requested by the app")
         if (isMoving) enterMoving() else enterStationary()
     }
 
@@ -130,8 +141,18 @@ object TrackingEngine {
     fun begin() {
         if (running) return
         running = true
+        Logger.purge()
+        Logger.i(
+            TAG,
+            "begin(): sdk=${Build.VERSION.SDK_INT} model=${Build.MANUFACTURER} ${Build.MODEL} " +
+                "locationPermission=${hasLocationPermission(app)} " +
+                "backgroundPermission=${Build.VERSION.SDK_INT < 29 || granted(Manifest.permission.ACCESS_BACKGROUND_LOCATION)} " +
+                "activityPermission=${Build.VERSION.SDK_INT < 29 || granted(Manifest.permission.ACTIVITY_RECOGNITION)} " +
+                "ignoringBatteryOptimizations=${isIgnoringBatteryOptimizations()}"
+        )
         fused = LocationServices.getFusedLocationProviderClient(app)
         registerProviderReceiver()
+        registerPowerReceiver()
         registerNetworkCallback()
         startActivityUpdates()
         enterMoving()
@@ -143,6 +164,7 @@ object TrackingEngine {
     fun end() {
         if (!running) return
         running = false
+        Logger.i(TAG, "end(): engine stopped")
         cancelStopTimer()
         main.removeCallbacks(heartbeat)
         removeLocationUpdates()
@@ -150,6 +172,8 @@ object TrackingEngine {
         stopActivityUpdates()
         providerReceiver?.let { runCatching { app.unregisterReceiver(it) } }
         providerReceiver = null
+        powerReceiver?.let { runCatching { app.unregisterReceiver(it) } }
+        powerReceiver = null
         unregisterNetworkCallback()
         moving = false
         Settings.isMoving = false
@@ -159,6 +183,7 @@ object TrackingEngine {
     // ------------------------------------------------------------------ state transitions
 
     private fun enterMoving() {
+        Logger.i(TAG, "-> MOVING (activity=${lastActivity.first}/${lastActivity.second})")
         cancelStopTimer()
         removeStationaryGeofence()
         moving = true
@@ -170,6 +195,7 @@ object TrackingEngine {
 
     @SuppressLint("MissingPermission")
     private fun enterStationary() {
+        Logger.i(TAG, "-> STATIONARY (activity=${lastActivity.first}/${lastActivity.second}); GPS updates off")
         cancelStopTimer()
         removeLocationUpdates()
         moving = false
@@ -189,6 +215,7 @@ object TrackingEngine {
 
     private fun onStopTimeout() {
         if (!running || !moving) return
+        Logger.i(TAG, "stopTimeout elapsed with the device still; stopOnStationary=${Settings.bool("activity", "stopOnStationary")}")
         if (Settings.bool("activity", "stopOnStationary")) {
             stop(app)
         } else {
@@ -207,7 +234,10 @@ object TrackingEngine {
 
     @SuppressLint("MissingPermission")
     private fun requestLocationUpdates() {
-        if (!hasLocationPermission(app)) return
+        if (!hasLocationPermission(app)) {
+            Logger.w(TAG, "requestLocationUpdates skipped: location permission not granted")
+            return
+        }
         val client = fused ?: return
         removeLocationUpdates()
 
@@ -225,6 +255,11 @@ object TrackingEngine {
         val priority = if (significant) Priority.PRIORITY_BALANCED_POWER_ACCURACY
         else priorityFor(Settings.string("geolocation", "desiredAccuracy", "high"))
 
+        Logger.d(
+            TAG,
+            "LocationRequest priority=$priority interval=${max(interval, 1000L)}ms " +
+                "distanceFilter=${distance}m elasticityFactor=$elasticityFactor significant=$significant"
+        )
         val builder = LocationRequest.Builder(priority, max(interval, 1000L))
             .setMinUpdateDistanceMeters(distance.toFloat())
         val fastest = Settings.int("geolocation", "fastestLocationUpdateInterval", -1)
@@ -251,12 +286,19 @@ object TrackingEngine {
         val forced = pendingMotionChange
         val threshold = Settings.obj("geolocation", "filter")
             ?.optDouble("trackingAccuracyThreshold", 100.0) ?: 100.0
-        if (!forced && loc.hasAccuracy() && loc.accuracy > threshold) return
+        if (!forced && loc.hasAccuracy() && loc.accuracy > threshold) {
+            Logger.v(TAG, "fix dropped: accuracy ${loc.accuracy}m > threshold ${threshold}m")
+            return
+        }
 
         val prev = lastLocation
         if (!forced && prev != null && !Settings.bool("geolocation", "allowIdenticalLocations") &&
             prev.latitude == loc.latitude && prev.longitude == loc.longitude
-        ) return
+        ) {
+            Logger.v(TAG, "fix dropped: identical to the previous location")
+            return
+        }
+        Logger.v(TAG, "fix accepted: acc=${loc.accuracy}m speed=${loc.speed} forced=$forced")
 
         val event = if (forced) "motionchange" else null
         pendingMotionChange = false
@@ -411,6 +453,81 @@ object TrackingEngine {
             .addOnFailureListener { cb(null, it.message ?: "Location error") }
     }
 
+    // ------------------------------------------------------------------ watchPosition
+
+    private const val WATCH_TIMEOUT_CODE = 408
+    private var nextWatchId = 1
+    private val watchers = mutableMapOf<Int, LocationCallback>()
+    private val watchTimeouts = mutableMapOf<Int, Runnable>()
+
+    /** Maps a `desiredAccuracy` argument (name or meters) to a fused-location priority. */
+    internal fun watchPriority(arg: Any?): Int = when (arg) {
+        is String -> priorityFor(arg)
+        is Number -> when {
+            arg.toDouble() <= 10.0 -> Priority.PRIORITY_HIGH_ACCURACY
+            arg.toDouble() <= 100.0 -> Priority.PRIORITY_BALANCED_POWER_ACCURACY
+            else -> Priority.PRIORITY_LOW_POWER
+        }
+        else -> priorityFor(Settings.string("geolocation", "desiredAccuracy", "high"))
+    }
+
+    /**
+     * Starts an independent position stream that does not touch the main tracking state. Each fix
+     * is emitted as `watchposition` `{id, location}`; a missing first fix within `timeout` seconds
+     * emits `{id, error: 408}`. Returns the watch id.
+     */
+    @SuppressLint("MissingPermission")
+    fun watchPosition(ctx: Context, args: Map<*, *>): Int {
+        init(ctx)
+        if (!hasLocationPermission(app)) throw IllegalStateException("Location permission not granted")
+        val client = fused ?: LocationServices.getFusedLocationProviderClient(app).also { fused = it }
+
+        val id = nextWatchId++
+        val interval = max((args["interval"] as? Number)?.toLong() ?: 1000L, 1000L)
+        val persist = args["persist"] as? Boolean ?: false
+        val extras = (args["extras"] as? Map<*, *>)?.toJson()
+        val timeoutSec = (args["timeout"] as? Number)?.toInt() ?: 0
+
+        val request = LocationRequest.Builder(watchPriority(args["desiredAccuracy"]), interval).build()
+        val cb = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                watchTimeouts.remove(id)?.let { main.removeCallbacks(it) }
+                for (loc in result.locations) {
+                    val json = buildLocation(loc, null, moving)
+                    extras?.let { json.put("extras", it) }
+                    if (persist) persist(json, loc.time)
+                    EventBus.emit("watchposition", mapOf("id" to id, "location" to json.toMap()))
+                }
+            }
+        }
+        watchers[id] = cb
+        client.requestLocationUpdates(request, cb, Looper.getMainLooper())
+        Logger.i(TAG, "watchPosition started id=$id interval=${interval}ms persist=$persist timeout=${timeoutSec}s")
+
+        if (timeoutSec > 0) {
+            val r = Runnable {
+                watchTimeouts.remove(id)
+                Logger.w(TAG, "watchPosition id=$id: no fix within ${timeoutSec}s")
+                EventBus.emit("watchposition", mapOf("id" to id, "error" to WATCH_TIMEOUT_CODE))
+            }
+            watchTimeouts[id] = r
+            main.postDelayed(r, timeoutSec * 1000L)
+        }
+        return id
+    }
+
+    fun stopWatchPosition(id: Int): Boolean {
+        watchTimeouts.remove(id)?.let { main.removeCallbacks(it) }
+        val cb = watchers.remove(id) ?: return false
+        fused?.removeLocationUpdates(cb)
+        Logger.i(TAG, "watchPosition stopped id=$id")
+        return true
+    }
+
+    fun stopAllWatchers() {
+        for (id in watchers.keys.toList()) stopWatchPosition(id)
+    }
+
     /** Inserts a caller-supplied record, bypassing persist mode. Returns its uuid. */
     fun insertLocation(ctx: Context, params: Map<*, *>): String {
         init(ctx)
@@ -452,6 +569,7 @@ object TrackingEngine {
         val changed = name != lastActivity.first
         lastActivity = name to confidence
         if (changed) {
+            Logger.d(TAG, "activity changed: $name ($confidence%)")
             EventBus.emit("activitychange", mapOf("activity" to name, "confidence" to confidence))
         }
         if (Settings.bool("activity", "disableStopDetection")) return
@@ -461,6 +579,7 @@ object TrackingEngine {
                 if (!stopTimerArmed) {
                     stopTimerArmed = true
                     val minutes = Settings.int("geolocation", "stopTimeout", 5)
+                    Logger.i(TAG, "device still; stop timer armed for $minutes min")
                     main.postDelayed(stopTimer, minutes * 60_000L)
                 }
             } else if (name != "unknown") {
@@ -520,6 +639,7 @@ object TrackingEngine {
     }
 
     fun onStationaryExit() {
+        Logger.i(TAG, "left the stationary geofence (running=$running moving=$moving)")
         if (running && !moving) enterMoving()
     }
 
@@ -528,7 +648,9 @@ object TrackingEngine {
     private fun registerProviderReceiver() {
         val r = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                EventBus.emit("providerchange", providerState(context))
+                val state = providerState(context)
+                Logger.i(TAG, "provider change: gps=${state["gps"]} network=${state["network"]} status=${state["status"]}")
+                EventBus.emit("providerchange", state)
             }
         }
         providerReceiver = r
@@ -536,6 +658,37 @@ object TrackingEngine {
             app, r, IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+    }
+
+    // ------------------------------------------------------------------ power state
+
+    private fun isIgnoringBatteryOptimizations(): Boolean = runCatching {
+        val pm = app.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        pm.isIgnoringBatteryOptimizations(app.packageName)
+    }.getOrDefault(false)
+
+    /** Power-save and Doze transitions: the usual suspects for silent gaps in tracking. */
+    private fun registerPowerReceiver() {
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                when (intent.action) {
+                    android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> {
+                        val on = pm.isPowerSaveMode
+                        Logger.i(TAG, "power save mode changed: enabled=$on")
+                        EventBus.emit("powersavechange", mapOf("enabled" to on))
+                    }
+                    android.os.PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
+                        val idle = Build.VERSION.SDK_INT >= 23 && pm.isDeviceIdleMode
+                        Logger.i(TAG, "Doze (device idle) mode changed: idle=$idle")
+                    }
+                }
+            }
+        }
+        powerReceiver = r
+        val filter = IntentFilter(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+        if (Build.VERSION.SDK_INT >= 23) filter.addAction(android.os.PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
+        ContextCompat.registerReceiver(app, r, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     fun providerState(ctx: Context): Map<String, Any?> {
@@ -566,11 +719,13 @@ object TrackingEngine {
         val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
+                Logger.i(TAG, "network available")
                 EventBus.emit("connectivitychange", mapOf("connected" to true))
                 HttpSync.autoSync(app) // flush records queued while offline
             }
 
             override fun onLost(network: Network) {
+                Logger.i(TAG, "network lost")
                 EventBus.emit("connectivitychange", mapOf("connected" to false))
             }
         }

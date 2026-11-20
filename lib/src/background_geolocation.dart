@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:ui' show PluginUtilities;
 
 import 'package:flutter/services.dart';
 
 import 'config.dart';
 import 'events.dart';
+import 'headless.dart';
 import 'models.dart';
 
 const MethodChannel _methods = MethodChannel('dev.openbg/methods');
@@ -112,13 +114,53 @@ class BackgroundGeolocation {
       'extras': extras,
       'timeout': timeout,
     }..removeWhere((_, v) => v == null);
-    final id = await _invoke<int>('watchPosition', args);
-    _subscribe<Location>('watchposition', _loc, success, failure);
+
+    // Subscribe before asking the native side to start, so a fix that arrives before the id is
+    // known is buffered instead of lost. Every watcher only sees events carrying its own id.
+    _ensureListening();
+    final controller =
+        _controllers.putIfAbsent('watchposition', () => StreamController<dynamic>.broadcast());
+    int? id;
+    final early = <Map>[];
+    final sub = controller.stream.listen((raw) {
+      if (raw is! Map) return;
+      if (id == null) {
+        early.add(raw);
+        return;
+      }
+      if (_watchId(raw) == id) _deliverWatch(raw, success, failure);
+    });
+    try {
+      id = await _invoke<int>('watchPosition', args);
+    } catch (_) {
+      await sub.cancel();
+      rethrow;
+    }
+    _watchers[id] = Subscription(sub.cancel);
+    for (final raw in early) {
+      if (_watchId(raw) == id) _deliverWatch(raw, success, failure);
+    }
     return id;
   }
 
-  static Future<bool> stopWatchPosition(int watchId) =>
-      _invoke<bool>('stopWatchPosition', watchId);
+  static final Map<int, Subscription> _watchers = {};
+
+  static int? _watchId(Map raw) => (raw['id'] as num?)?.toInt();
+
+  static void _deliverWatch(
+      Map raw, void Function(Location) success, void Function(LocationError)? failure) {
+    if (raw['error'] != null) {
+      failure?.call(LocationError((raw['error'] as num).toInt()));
+    } else {
+      success(_loc(raw['location']));
+    }
+  }
+
+  /// Stops a stream started with [watchPosition]. Returns false if the id was not active.
+  static Future<bool> stopWatchPosition(int watchId) async {
+    _watchers.remove(watchId)?.remove();
+    return _invoke<bool>('stopWatchPosition', watchId);
+  }
 
   static Future<double> get odometer async => (await _invoke<num>('getOdometer')).toDouble();
   static Future<Location> setOdometer(double value) async =>
@@ -180,6 +222,29 @@ class BackgroundGeolocation {
   static Future<int> requestTemporaryFullAccuracy(String purpose) =>
       _invoke<int>('requestTemporaryFullAccuracy', purpose);
 
+  /// Android only. Registers [task] to receive events while the app has no UI (for example after
+  /// the user closes it from the recents list with `stopOnTerminate: false`). Requires
+  /// `AppConfig(enableHeadless: true)`.
+  ///
+  /// [task] must be a top-level or static function and should carry
+  /// `@pragma('vm:entry-point')` so it survives release-mode tree shaking.
+  static Future<bool> registerHeadlessTask(HeadlessTask task) async {
+    final dispatcher = PluginUtilities.getCallbackHandle(openBgHeadlessDispatcher);
+    final callback = PluginUtilities.getCallbackHandle(task);
+    if (dispatcher == null || callback == null) {
+      throw ArgumentError.value(
+        task,
+        'task',
+        'must be a top-level or static function (closures and instance methods cannot be '
+            'resolved in the background isolate)',
+      );
+    }
+    return _invoke<bool>('registerHeadlessTask', {
+      'dispatcher': dispatcher.toRawHandle(),
+      'callback': callback.toRawHandle(),
+    });
+  }
+
   static Future<int> startBackgroundTask() => _invoke<int>('startBackgroundTask');
   static Future<int> stopBackgroundTask(int taskId) =>
       _invoke<int>('stopBackgroundTask', taskId);
@@ -189,6 +254,7 @@ class BackgroundGeolocation {
       await c.close();
     }
     _controllers.clear();
+    _watchers.clear();
     await _nativeSub?.cancel();
     _nativeSub = null;
   }
@@ -226,6 +292,10 @@ class BackgroundGeolocation {
 
   static Subscription onHttp(void Function(HttpEvent) cb) =>
       _subscribe<HttpEvent>('http', HttpEvent.fromMap, cb);
+
+  /// Fires after each access-token refresh attempt, successful or not.
+  static Subscription onAuthorization(void Function(AuthorizationEvent) cb) =>
+      _subscribe<AuthorizationEvent>('authorization', AuthorizationEvent.fromMap, cb);
 
   static Subscription onPowerSaveChange(void Function(bool) cb) => _subscribe<bool>(
       'powersavechange', (raw) => raw == true || (raw is Map && raw['enabled'] == true), cb);

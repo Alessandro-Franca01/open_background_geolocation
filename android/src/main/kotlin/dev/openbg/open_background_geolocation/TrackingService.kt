@@ -21,6 +21,7 @@ class TrackingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         TrackingEngine.init(this)
+        Logger.i("service", "onStartCommand action=${intent?.action} enabled=${Settings.enabled} restart=${intent == null}")
         if (intent?.action == ACTION_STOP || !Settings.enabled) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -38,13 +39,16 @@ class TrackingService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         TrackingEngine.init(this)
-        if (Settings.bool("app", "stopOnTerminate", true)) {
+        val stop = Settings.bool("app", "stopOnTerminate", true)
+        Logger.i("service", "onTaskRemoved (app closed from recents); stopOnTerminate=$stop")
+        if (stop) {
             TrackingEngine.stop(this)
         }
         super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
+        Logger.i("service", "onDestroy")
         TrackingEngine.end()
         super.onDestroy()
     }

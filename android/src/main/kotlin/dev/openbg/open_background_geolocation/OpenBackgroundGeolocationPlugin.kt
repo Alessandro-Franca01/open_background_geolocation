@@ -31,7 +31,14 @@ class OpenBackgroundGeolocationPlugin :
     /** Completion for an in-flight permission flow. */
     private var pendingPermission: ((Int) -> Unit)? = null
 
+    /** This instance's own event sink, so detaching never clears another engine's sink. */
+    private var mySink: EventChannel.EventSink? = null
+
+    /** True for the instance created inside the background (headless) engine. */
+    private var isHeadless = false
+
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        isHeadless = HeadlessTask.creating
         context = binding.applicationContext
         TrackingEngine.init(context)
         methods = MethodChannel(binding.binaryMessenger, "dev.openbg/methods")
@@ -41,17 +48,23 @@ class OpenBackgroundGeolocationPlugin :
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        // The background engine also loads this plugin; its teardown must not touch UI state.
+        if (!isHeadless) TrackingEngine.stopAllWatchers()
         methods.setMethodCallHandler(null)
         events.setStreamHandler(null)
-        EventBus.sink = null
+        releaseSink()
     }
 
     override fun onListen(arguments: Any?, sink: EventChannel.EventSink?) {
+        mySink = sink
         EventBus.sink = sink
     }
 
-    override fun onCancel(arguments: Any?) {
-        EventBus.sink = null
+    override fun onCancel(arguments: Any?) = releaseSink()
+
+    private fun releaseSink() {
+        if (EventBus.sink === mySink) EventBus.sink = null
+        mySink = null
     }
 
     // ----------------------------------------------------------------- activity
@@ -62,12 +75,19 @@ class OpenBackgroundGeolocationPlugin :
         binding.addRequestPermissionsResultListener(this)
     }
 
-    override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
+    // A configuration change (e.g. rotation) detaches and re-attaches the activity; watchers survive it.
+    override fun onDetachedFromActivityForConfigChanges() = detachActivity()
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) =
         onAttachedToActivity(binding)
 
     override fun onDetachedFromActivity() {
+        detachActivity()
+        // watchPosition is a foreground API: stop the streams when the screen is really gone.
+        TrackingEngine.stopAllWatchers()
+    }
+
+    private fun detachActivity() {
         activityBinding?.removeRequestPermissionsResultListener(this)
         activityBinding = null
         activity = null
@@ -95,6 +115,18 @@ class OpenBackgroundGeolocationPlugin :
             "getState" -> result.success(Settings.stateMap())
             "setConfig" -> {
                 Settings.update(args as Map<*, *>)
+                // A changed schedule takes effect immediately while the scheduler is running.
+                if (Settings.schedulerEnabled && (args["app"] as? Map<*, *>)?.containsKey("schedule") == true) {
+                    Scheduler.evaluate(context)
+                }
+                result.success(Settings.stateMap())
+            }
+            "startSchedule" -> {
+                Scheduler.start(context)
+                result.success(Settings.stateMap())
+            }
+            "stopSchedule" -> {
+                Scheduler.stop(context)
                 result.success(Settings.stateMap())
             }
             "reset" -> {
@@ -119,6 +151,10 @@ class OpenBackgroundGeolocationPlugin :
             ) { loc, err ->
                 if (loc != null) result.success(loc) else result.error("LOCATION_ERROR", err, null)
             }
+            "watchPosition" -> result.success(
+                TrackingEngine.watchPosition(context, (args as? Map<*, *>) ?: emptyMap<String, Any?>())
+            )
+            "stopWatchPosition" -> result.success(TrackingEngine.stopWatchPosition((args as Number).toInt()))
             "getOdometer" -> result.success(Settings.odometer)
             "setOdometer" -> {
                 Settings.odometer = (args as Number).toDouble()
@@ -159,6 +195,28 @@ class OpenBackgroundGeolocationPlugin :
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     if (err == null) result.success(records) else result.error("HTTP_ERROR", err, null)
                 }
+            }
+            "getLog" -> {
+                val q = (args as? Map<*, *>) ?: emptyMap<String, Any?>()
+                result.success(
+                    Logger.get(
+                        q["order"] as? String ?: "ASC",
+                        (q["limit"] as? Number)?.toInt(),
+                        (q["start"] as? Number)?.toLong(),
+                        (q["end"] as? Number)?.toLong(),
+                    )
+                )
+            }
+            "destroyLog" -> result.success(Logger.clear())
+            "log" -> {
+                val q = args as Map<*, *>
+                Logger.log(q["level"] as? String ?: "info", "app", q["message"]?.toString() ?: "")
+                result.success(true)
+            }
+            "registerHeadlessTask" -> {
+                val q = args as Map<*, *>
+                HeadlessTask.register(context, (q["dispatcher"] as Number).toLong(), (q["callback"] as Number).toLong())
+                result.success(true)
             }
             "getProviderState" -> result.success(TrackingEngine.providerState(context))
             "requestPermission" -> requestPermission { result.success(it) }
