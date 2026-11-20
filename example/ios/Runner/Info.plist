@@ -45,5 +45,15 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Location is tracked in the background to record the route.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Location is used to record the route.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Motion activity is used to detect when the device is moving or still.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 </dict>
 </plist>

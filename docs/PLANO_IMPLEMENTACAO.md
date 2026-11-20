@@ -1,5 +1,16 @@
 # Plano de implementação — open_background_geolocation (6 etapas)
 
+## Status da implementação
+
+| Etapa | Estado |
+|---|---|
+| 1. Logger | feito (Android), testado por unidade; não validado em aparelho |
+| 2. `watchPosition` | feito (Android), testes Dart; não validado em aparelho |
+| 3. Headless | feito (Android), compila; **não validado em aparelho** |
+| 4. JWT | feito (Android), testes JVM; não validado contra backend real |
+| 5. Schedule | feito (Android), testes JVM; não validado em aparelho |
+| 6. iOS | código escrito, **nunca compilado nem executado** (sem Mac); ver `docs/IOS_VALIDACAO.md` |
+
 ## Contexto
 
 Plugin Flutter de geolocalização em segundo plano (`open_background_geolocation`, MIT, clean-room).

@@ -3,8 +3,10 @@
 Open source background location tracking, motion detection and geofencing plugin for Flutter.
 No license key, free in debug and release builds (MIT).
 
-> **Status: early development.** Android tracking, geofencing and HTTP sync are implemented but
-> have not been tested on a real device yet. See the roadmap below.
+> **Status: early development.** Android tracking, geofencing, HTTP sync, logger, headless, JWT and
+> schedule are implemented but have not been tested on a real device yet. The iOS side is fully
+> written but **has never been compiled or run** (no Mac was available); see
+> [docs/IOS_VALIDACAO.md](docs/IOS_VALIDACAO.md).
 
 This is an independent, clean-room implementation. It is not affiliated with, endorsed by, or
 derived from the code of any commercial SDK. See [docs/CLEAN_ROOM.md](docs/CLEAN_ROOM.md).
@@ -14,18 +16,18 @@ derived from the code of any commercial SDK. See [docs/CLEAN_ROOM.md](docs/CLEAN
 | Feature | Android | iOS |
 |---|---|---|
 | Config model and Dart API | done | done (shared Dart) |
-| Continuous tracking (distance filter, elasticity, odometer) | implemented, untested | planned |
-| Motion detection (moving / stationary state machine) | implemented, untested | planned |
+| Continuous tracking (distance filter, elasticity, odometer) | implemented, untested | written, unbuilt |
+| Motion detection (moving / stationary state machine) | implemented, untested | written, unbuilt |
 | Foreground service and notification | implemented, untested | n/a |
-| Local persistence (SQLite) | implemented | planned |
-| `getCurrentPosition`, `changePace` | implemented, untested | planned |
-| Geofencing (circular; enter / exit / dwell) | implemented, untested | planned |
-| HTTP sync (`autoSync`, batch, retry) | implemented, untested | planned |
-| Persistent logger (`Logger.getLog`) | implemented | planned |
-| `watchPosition` | implemented, untested | planned |
-| JWT authorization with token refresh (`Authorization`) | implemented, untested | planned |
+| Local persistence (SQLite) | implemented | written, unbuilt |
+| `getCurrentPosition`, `changePace` | implemented, untested | written, unbuilt |
+| Geofencing (circular; enter / exit / dwell) | implemented, untested | written, unbuilt |
+| HTTP sync (`autoSync`, batch, retry) | implemented, untested | written, unbuilt |
+| Persistent logger (`Logger.getLog`) | implemented | written, unbuilt |
+| `watchPosition` | implemented, untested | written, unbuilt |
+| JWT authorization with token refresh (`Authorization`) | implemented, untested | written, unbuilt |
 | headless (`registerHeadlessTask`) | implemented, untested | n/a |
-| schedule (`startSchedule`) | implemented, untested | planned |
+| schedule (`startSchedule`) | implemented, untested | written, unbuilt |
 
 ## Usage
 
@@ -56,6 +58,14 @@ await bg.BackgroundGeolocation.start();
   nearest are active.
 - HTTP: a 2xx response deletes the uploaded records, anything else keeps them queued. Cleartext
   `http://` URLs need `usesCleartextTraffic` in your app manifest.
+
+## iOS notes
+
+Add to the app's `Info.plist`: `NSLocationAlwaysAndWhenInUseUsageDescription`,
+`NSLocationWhenInUseUsageDescription`, `NSMotionUsageDescription` and `UIBackgroundModes` with
+`location`. iOS watches at most 20 regions (the plugin uses 19 for geofences), schedules only fire
+while the app runs, and `registerHeadlessTask` is a no-op because iOS relaunches the app with Dart
+running. Details and limits: [docs/IOS_VALIDACAO.md](docs/IOS_VALIDACAO.md).
 
 ## Headless (Android)
 

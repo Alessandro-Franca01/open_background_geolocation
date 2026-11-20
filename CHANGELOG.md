@@ -19,6 +19,10 @@
   windows may cross midnight) are applied by `startSchedule()` / `stopSchedule()` with an alarm at
   each boundary; it re-arms after reboot and clock or time-zone changes and fires `onSchedule`.
 
+* iOS: first implementation of the whole API (CoreLocation + CoreMotion, SQLite, geofences, HTTP
+  sync, JWT refresh, logger, watchPosition, schedule). **Written without a compiler and never
+  built or run**; see `docs/IOS_VALIDACAO.md`.
+
 ## 0.0.1
 
 * Initial Dart API and Android tracking engine, geofencing and HTTP sync.

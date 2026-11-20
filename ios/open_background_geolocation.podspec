@@ -5,9 +5,9 @@
 Pod::Spec.new do |s|
   s.name             = 'open_background_geolocation'
   s.version          = '0.0.1'
-  s.summary          = 'A new Flutter plugin project.'
+  s.summary          = 'Background geolocation, motion detection and geofencing for Flutter.'
   s.description      = <<-DESC
-A new Flutter plugin project.
+Open source background location tracking, motion detection and geofencing plugin.
                        DESC
   s.homepage         = 'http://example.com'
   s.license          = { :file => '../LICENSE' }
@@ -15,6 +15,8 @@ A new Flutter plugin project.
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
+  s.frameworks = 'CoreLocation', 'CoreMotion', 'Network', 'UIKit'
+  s.library = 'sqlite3'
   s.platform = :ios, '12.0'
 
   # Flutter.framework does not contain a i386 slice.
