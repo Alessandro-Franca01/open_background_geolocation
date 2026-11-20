@@ -115,6 +115,18 @@ class OpenBackgroundGeolocationPlugin :
             "getState" -> result.success(Settings.stateMap())
             "setConfig" -> {
                 Settings.update(args as Map<*, *>)
+                // A changed schedule takes effect immediately while the scheduler is running.
+                if (Settings.schedulerEnabled && (args["app"] as? Map<*, *>)?.containsKey("schedule") == true) {
+                    Scheduler.evaluate(context)
+                }
+                result.success(Settings.stateMap())
+            }
+            "startSchedule" -> {
+                Scheduler.start(context)
+                result.success(Settings.stateMap())
+            }
+            "stopSchedule" -> {
+                Scheduler.stop(context)
                 result.success(Settings.stateMap())
             }
             "reset" -> {

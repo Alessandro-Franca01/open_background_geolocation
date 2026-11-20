@@ -26,6 +26,15 @@
         <receiver
             android:name="dev.openbg.open_background_geolocation.GeofenceReceiver"
             android:exported="false" />
+        <!-- Exported so the system can deliver the clock broadcasts; evaluating is idempotent. -->
+        <receiver
+            android:name="dev.openbg.open_background_geolocation.ScheduleReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <receiver
             android:name="dev.openbg.open_background_geolocation.BootReceiver"
             android:exported="true">

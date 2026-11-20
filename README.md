@@ -25,7 +25,7 @@ derived from the code of any commercial SDK. See [docs/CLEAN_ROOM.md](docs/CLEAN
 | `watchPosition` | implemented, untested | planned |
 | JWT authorization with token refresh (`Authorization`) | implemented, untested | planned |
 | headless (`registerHeadlessTask`) | implemented, untested | n/a |
-| schedule | planned | planned |
+| schedule (`startSchedule`) | implemented, untested | planned |
 
 ## Usage
 
@@ -77,6 +77,27 @@ void main() {
 
 The task must be a top-level or static function. Call `registerHeadlessTask` on every app start so
 the stored callback handle stays valid after an app update.
+
+## Schedule (Android)
+
+```dart
+await bg.BackgroundGeolocation.ready(bg.Config(
+  app: bg.AppConfig(schedule: ['2-6 08:00-18:00', '7 09:00-12:00 geofence']),
+));
+await bg.BackgroundGeolocation.startSchedule();
+```
+
+Each entry is `"<days> <HH:mm>-<HH:mm> [geofence]"`. Days are 1-7 with **1 = Sunday**, as a range
+(`2-6`), a list (`1,7`) or a mix. The start is inclusive and the end exclusive; `24:00` is a valid
+end, and an end before the start crosses midnight (`22:00-06:00`). The `geofence` suffix monitors
+geofences only. If windows overlap, continuous tracking wins. Malformed entries are ignored and
+noted in the plugin log; `startSchedule()` does nothing when no entry is valid.
+
+`stopSchedule()` stops scheduling but leaves tracking as it is. Alarms are inexact by default (they
+may slip by a few minutes in Doze). Set `scheduleUseAlarmManager: true` for exact alarms; on
+Android 12+ your app must hold the `SCHEDULE_EXACT_ALARM` permission, which the plugin does not
+declare for you. Android 12+ can also refuse to start a foreground service from the background, so
+exempt the app from battery optimization; a refused start is logged with tag `schedule`.
 
 ## Authorization (JWT)
 

@@ -15,6 +15,10 @@
   `Authorization: Bearer`, refreshes the token before it expires or after a 401 (one retry), stores
   the new pair and fires `onAuthorization`.
 
+* Android: schedule. `AppConfig.schedule` windows (`"2-6 08:00-18:00"`, optional `geofence` suffix,
+  windows may cross midnight) are applied by `startSchedule()` / `stopSchedule()` with an alarm at
+  each boundary; it re-arms after reboot and clock or time-zone changes and fires `onSchedule`.
+
 ## 0.0.1
 
 * Initial Dart API and Android tracking engine, geofencing and HTTP sync.

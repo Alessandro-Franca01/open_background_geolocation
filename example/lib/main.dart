@@ -34,6 +34,10 @@ class _MyAppState extends State<MyApp> {
     super.initState();
     bg.BackgroundGeolocation.onLocation((l) => _add('${l.coords.latitude}, ${l.coords.longitude}'));
     bg.BackgroundGeolocation.onMotionChange((l) => _add('motion: ${l.isMoving}'));
+    bg.BackgroundGeolocation.onSchedule((s) {
+      _add('schedule event: enabled=${s.enabled}');
+      setState(() => _enabled = s.enabled);
+    });
     bg.BackgroundGeolocation.ready(const bg.Config(
       geolocation: bg.GeoConfig(desiredAccuracy: bg.DesiredAccuracy.high, distanceFilter: 10),
       app: bg.AppConfig(stopOnTerminate: false, startOnBoot: true, enableHeadless: true),
@@ -42,6 +46,19 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _add(String line) => setState(() => _log.insert(0, line));
+
+  /// Stops tracking and schedules a window from +1 to +3 minutes, to watch it turn on and off.
+  Future<void> _testSchedule() async {
+    String hm(DateTime t) =>
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    final now = DateTime.now();
+    final window = '1-7 ${hm(now.add(const Duration(minutes: 1)))}-${hm(now.add(const Duration(minutes: 3)))}';
+    await bg.BackgroundGeolocation.stop();
+    await bg.BackgroundGeolocation.setConfig(bg.Config(app: bg.AppConfig(schedule: [window])));
+    final s = await bg.BackgroundGeolocation.startSchedule();
+    setState(() => _enabled = s.enabled);
+    _add('schedule $window (schedulerEnabled=${s.schedulerEnabled})');
+  }
 
   int? _watchId;
 
@@ -100,6 +117,11 @@ class _MyAppState extends State<MyApp> {
           appBar: AppBar(
             title: const Text('open_background_geolocation'),
             actions: [
+              IconButton(
+                tooltip: 'Testar schedule (+1 a +3 min)',
+                icon: const Icon(Icons.schedule),
+                onPressed: _testSchedule,
+              ),
               IconButton(
                 tooltip: _watchId == null ? 'Iniciar watch' : 'Parar watch',
                 icon: Icon(_watchId == null ? Icons.visibility_outlined : Icons.visibility_off_outlined),

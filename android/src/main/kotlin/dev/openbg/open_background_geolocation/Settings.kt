@@ -150,6 +150,11 @@ object Settings {
         get() = java.lang.Double.longBitsToDouble(prefs.getLong("odometer", 0L))
         set(v) = prefs.edit().putLong("odometer", java.lang.Double.doubleToRawLongBits(v)).apply()
 
+    /** True between `startSchedule()` and `stopSchedule()`; survives restarts and reboots. */
+    var schedulerEnabled: Boolean
+        get() = prefs.getBoolean("schedulerEnabled", false)
+        set(v) = prefs.edit().putBoolean("schedulerEnabled", v).apply()
+
     var didDeviceReboot: Boolean
         get() = prefs.getBoolean("didReboot", false)
         set(v) = prefs.edit().putBoolean("didReboot", v).apply()
@@ -164,7 +169,7 @@ object Settings {
         m["isMoving"] = isMoving
         m["trackingMode"] = trackingMode
         m["odometer"] = odometer
-        m["schedulerEnabled"] = false
+        m["schedulerEnabled"] = schedulerEnabled
         m["didDeviceReboot"] = didDeviceReboot
         m["didLaunchInBackground"] = false
         m["isFirstBoot"] = isFirstBoot

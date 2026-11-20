@@ -46,6 +46,11 @@ class BootReceiver : BroadcastReceiver() {
             "boot",
             "received ${intent.action}; enabled=${Settings.enabled} startOnBoot=${Settings.bool("app", "startOnBoot")}"
         )
+        if (Settings.schedulerEnabled) {
+            // The schedule decides what should be running now, regardless of startOnBoot.
+            Scheduler.evaluate(context)
+            return
+        }
         if (Settings.enabled && Settings.bool("app", "startOnBoot")) {
             Settings.didDeviceReboot = intent.action == Intent.ACTION_BOOT_COMPLETED
             if (Settings.trackingMode == 0) TrackingEngine.startGeofences(context)
