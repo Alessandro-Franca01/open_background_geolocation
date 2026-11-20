@@ -147,7 +147,7 @@ se o aparelho estava carregando, e se houve interação do usuário com o app.
 
 - ~~Logger persistente~~ implementado (`Logger.getLog()`); ver `docs/PLANO_IMPLEMENTACAO.md`.
 - Eventos para o Dart são descartados sem tela (headless não implementado).
-- `watchPosition`, schedule e autorização por token (JWT) não implementados.
+- schedule e autorização por token (JWT) não implementados.
 - Elasticidade usa heurística própria (até 10x o filtro) e pode ser grosseira para motorista;
   prefira `disableElasticity: true`.
 - Android depende do Google Play Services.

@@ -41,6 +41,7 @@ class OpenBackgroundGeolocationPlugin :
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        TrackingEngine.stopAllWatchers()
         methods.setMethodCallHandler(null)
         events.setStreamHandler(null)
         EventBus.sink = null
@@ -62,12 +63,19 @@ class OpenBackgroundGeolocationPlugin :
         binding.addRequestPermissionsResultListener(this)
     }
 
-    override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
+    // A configuration change (e.g. rotation) detaches and re-attaches the activity; watchers survive it.
+    override fun onDetachedFromActivityForConfigChanges() = detachActivity()
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) =
         onAttachedToActivity(binding)
 
     override fun onDetachedFromActivity() {
+        detachActivity()
+        // watchPosition is a foreground API: stop the streams when the screen is really gone.
+        TrackingEngine.stopAllWatchers()
+    }
+
+    private fun detachActivity() {
         activityBinding?.removeRequestPermissionsResultListener(this)
         activityBinding = null
         activity = null
@@ -119,6 +127,10 @@ class OpenBackgroundGeolocationPlugin :
             ) { loc, err ->
                 if (loc != null) result.success(loc) else result.error("LOCATION_ERROR", err, null)
             }
+            "watchPosition" -> result.success(
+                TrackingEngine.watchPosition(context, (args as? Map<*, *>) ?: emptyMap<String, Any?>())
+            )
+            "stopWatchPosition" -> result.success(TrackingEngine.stopWatchPosition((args as Number).toInt()))
             "getOdometer" -> result.success(Settings.odometer)
             "setOdometer" -> {
                 Settings.odometer = (args as Number).toDouble()

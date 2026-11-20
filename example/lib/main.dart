@@ -28,6 +28,26 @@ class _MyAppState extends State<MyApp> {
 
   void _add(String line) => setState(() => _log.insert(0, line));
 
+  int? _watchId;
+
+  Future<void> _toggleWatch() async {
+    final id = _watchId;
+    if (id != null) {
+      await bg.BackgroundGeolocation.stopWatchPosition(id);
+      setState(() => _watchId = null);
+      _add('watch stopped');
+      return;
+    }
+    final newId = await bg.BackgroundGeolocation.watchPosition(
+      (l) => _add('watch: ${l.coords.latitude}, ${l.coords.longitude}'),
+      failure: (e) => _add('watch error ${e.code}'),
+      interval: 5000,
+      timeout: 60,
+    );
+    setState(() => _watchId = newId);
+    _add('watch started (id $newId)');
+  }
+
   Future<void> _showLog(BuildContext context) async {
     final text = await bg.Logger.getLog(order: 'DESC', limit: 300);
     if (!context.mounted) return;
@@ -65,6 +85,11 @@ class _MyAppState extends State<MyApp> {
           appBar: AppBar(
             title: const Text('open_background_geolocation'),
             actions: [
+              IconButton(
+                tooltip: _watchId == null ? 'Iniciar watch' : 'Parar watch',
+                icon: Icon(_watchId == null ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                onPressed: _toggleWatch,
+              ),
               Builder(
                 builder: (ctx) => IconButton(
                   tooltip: 'Ver log',

@@ -22,7 +22,8 @@ derived from the code of any commercial SDK. See [docs/CLEAN_ROOM.md](docs/CLEAN
 | Geofencing (circular; enter / exit / dwell) | implemented, untested | planned |
 | HTTP sync (`autoSync`, batch, retry) | implemented, untested | planned |
 | Persistent logger (`Logger.getLog`) | implemented | planned |
-| `watchPosition`, schedule, headless | planned | planned |
+| `watchPosition` | implemented, untested | planned |
+| schedule, headless | planned | planned |
 
 ## Usage
 

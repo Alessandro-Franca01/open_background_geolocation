@@ -119,6 +119,7 @@ object TrackingEngine {
         val wasEnabled = Settings.enabled
         Settings.enabled = false
         Logger.i(TAG, "stop() requested (wasEnabled=$wasEnabled)")
+        stopAllWatchers()
         end()
         TrackingService.stop(app)
         GeofenceManager.init(app)
@@ -447,6 +448,81 @@ object TrackingEngine {
                 cb(json.toMap(), null)
             }
             .addOnFailureListener { cb(null, it.message ?: "Location error") }
+    }
+
+    // ------------------------------------------------------------------ watchPosition
+
+    private const val WATCH_TIMEOUT_CODE = 408
+    private var nextWatchId = 1
+    private val watchers = mutableMapOf<Int, LocationCallback>()
+    private val watchTimeouts = mutableMapOf<Int, Runnable>()
+
+    /** Maps a `desiredAccuracy` argument (name or meters) to a fused-location priority. */
+    internal fun watchPriority(arg: Any?): Int = when (arg) {
+        is String -> priorityFor(arg)
+        is Number -> when {
+            arg.toDouble() <= 10.0 -> Priority.PRIORITY_HIGH_ACCURACY
+            arg.toDouble() <= 100.0 -> Priority.PRIORITY_BALANCED_POWER_ACCURACY
+            else -> Priority.PRIORITY_LOW_POWER
+        }
+        else -> priorityFor(Settings.string("geolocation", "desiredAccuracy", "high"))
+    }
+
+    /**
+     * Starts an independent position stream that does not touch the main tracking state. Each fix
+     * is emitted as `watchposition` `{id, location}`; a missing first fix within `timeout` seconds
+     * emits `{id, error: 408}`. Returns the watch id.
+     */
+    @SuppressLint("MissingPermission")
+    fun watchPosition(ctx: Context, args: Map<*, *>): Int {
+        init(ctx)
+        if (!hasLocationPermission(app)) throw IllegalStateException("Location permission not granted")
+        val client = fused ?: LocationServices.getFusedLocationProviderClient(app).also { fused = it }
+
+        val id = nextWatchId++
+        val interval = max((args["interval"] as? Number)?.toLong() ?: 1000L, 1000L)
+        val persist = args["persist"] as? Boolean ?: false
+        val extras = (args["extras"] as? Map<*, *>)?.toJson()
+        val timeoutSec = (args["timeout"] as? Number)?.toInt() ?: 0
+
+        val request = LocationRequest.Builder(watchPriority(args["desiredAccuracy"]), interval).build()
+        val cb = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                watchTimeouts.remove(id)?.let { main.removeCallbacks(it) }
+                for (loc in result.locations) {
+                    val json = buildLocation(loc, null, moving)
+                    extras?.let { json.put("extras", it) }
+                    if (persist) persist(json, loc.time)
+                    EventBus.emit("watchposition", mapOf("id" to id, "location" to json.toMap()))
+                }
+            }
+        }
+        watchers[id] = cb
+        client.requestLocationUpdates(request, cb, Looper.getMainLooper())
+        Logger.i(TAG, "watchPosition started id=$id interval=${interval}ms persist=$persist timeout=${timeoutSec}s")
+
+        if (timeoutSec > 0) {
+            val r = Runnable {
+                watchTimeouts.remove(id)
+                Logger.w(TAG, "watchPosition id=$id: no fix within ${timeoutSec}s")
+                EventBus.emit("watchposition", mapOf("id" to id, "error" to WATCH_TIMEOUT_CODE))
+            }
+            watchTimeouts[id] = r
+            main.postDelayed(r, timeoutSec * 1000L)
+        }
+        return id
+    }
+
+    fun stopWatchPosition(id: Int): Boolean {
+        watchTimeouts.remove(id)?.let { main.removeCallbacks(it) }
+        val cb = watchers.remove(id) ?: return false
+        fused?.removeLocationUpdates(cb)
+        Logger.i(TAG, "watchPosition stopped id=$id")
+        return true
+    }
+
+    fun stopAllWatchers() {
+        for (id in watchers.keys.toList()) stopWatchPosition(id)
     }
 
     /** Inserts a caller-supplied record, bypassing persist mode. Returns its uuid. */
