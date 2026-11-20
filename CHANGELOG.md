@@ -11,6 +11,10 @@
 * Android: `watchPosition` / `stopWatchPosition` implemented (independent streams, optional persist,
   timeout error 408). Dart: each watcher now only receives its own events.
 
+* Android: JWT authorization for HTTP sync. `Config(authorization: Authorization(...))` sends
+  `Authorization: Bearer`, refreshes the token before it expires or after a 401 (one retry), stores
+  the new pair and fires `onAuthorization`.
+
 ## 0.0.1
 
 * Initial Dart API and Android tracking engine, geofencing and HTTP sync.

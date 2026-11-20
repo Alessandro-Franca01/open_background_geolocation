@@ -306,6 +306,49 @@ class AppConfig {
       });
 }
 
+/// Bearer-token authorization for HTTP sync (Android).
+///
+/// The plugin sends `Authorization: Bearer <accessToken>` with every upload. When [expires] has
+/// passed, or the server answers 401, it POSTs [refreshPayload] (form-encoded) to [refreshUrl] to
+/// obtain a new pair, stores it, and retries once. The string `{refreshToken}` inside
+/// [refreshPayload] values is replaced with the current refresh token; when no payload is given
+/// the body is `refresh_token={refreshToken}`.
+///
+/// Note that `Config.reset` defaults to true, so `ready()` discards tokens the plugin refreshed
+/// earlier in favor of the ones given here. Pass `reset: false` to keep the stored pair.
+class Authorization {
+  /// Only `JWT` is supported.
+  final String? strategy;
+  final String? accessToken;
+  final String? refreshToken;
+  final String? refreshUrl;
+  final Map<String, dynamic>? refreshPayload;
+  final Map<String, dynamic>? refreshHeaders;
+
+  /// Expiry of [accessToken] in epoch seconds; omit or use -1 when unknown.
+  final int? expires;
+
+  const Authorization({
+    this.strategy = 'JWT',
+    this.accessToken,
+    this.refreshToken,
+    this.refreshUrl,
+    this.refreshPayload,
+    this.refreshHeaders,
+    this.expires,
+  });
+
+  Map<String, dynamic> toMap() => _compact({
+        'strategy': strategy,
+        'accessToken': accessToken,
+        'refreshToken': refreshToken,
+        'refreshUrl': refreshUrl,
+        'refreshPayload': refreshPayload,
+        'refreshHeaders': refreshHeaders,
+        'expires': expires,
+      });
+}
+
 class LoggerConfig {
   final bool? debug;
   final LogLevel? logLevel;
@@ -328,6 +371,7 @@ class Config {
   final PersistenceConfig? persistence;
   final AppConfig? app;
   final LoggerConfig? logger;
+  final Authorization? authorization;
 
   /// When true (default), `ready()` applies this config on top of defaults,
   /// discarding previously persisted configuration.
@@ -340,6 +384,7 @@ class Config {
     this.persistence,
     this.app,
     this.logger,
+    this.authorization,
     this.reset,
   });
 
@@ -350,6 +395,7 @@ class Config {
         'persistence': persistence?.toMap(),
         'app': app?.toMap(),
         'logger': logger?.toMap(),
+        'authorization': authorization?.toMap(),
         'reset': reset,
       });
 }

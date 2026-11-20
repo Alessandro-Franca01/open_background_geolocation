@@ -49,6 +49,8 @@ HeadlessEvent parseHeadlessEvent(String name, Object? data) {
       parsed = HeartbeatEvent.fromMap(data);
     case 'http':
       parsed = HttpEvent.fromMap(data);
+    case 'authorization':
+      parsed = AuthorizationEvent.fromMap(data);
     case 'enabledchange':
     case 'powersavechange':
       parsed = _flag(data);

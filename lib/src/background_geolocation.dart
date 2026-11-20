@@ -293,6 +293,10 @@ class BackgroundGeolocation {
   static Subscription onHttp(void Function(HttpEvent) cb) =>
       _subscribe<HttpEvent>('http', HttpEvent.fromMap, cb);
 
+  /// Fires after each access-token refresh attempt, successful or not.
+  static Subscription onAuthorization(void Function(AuthorizationEvent) cb) =>
+      _subscribe<AuthorizationEvent>('authorization', AuthorizationEvent.fromMap, cb);
+
   static Subscription onPowerSaveChange(void Function(bool) cb) => _subscribe<bool>(
       'powersavechange', (raw) => raw == true || (raw is Map && raw['enabled'] == true), cb);
 

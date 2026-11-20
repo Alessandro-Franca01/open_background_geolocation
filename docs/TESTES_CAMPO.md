@@ -147,7 +147,8 @@ se o aparelho estava carregando, e se houve interação do usuário com o app.
 
 - ~~Logger persistente~~ implementado (`Logger.getLog()`); ver `docs/PLANO_IMPLEMENTACAO.md`.
 - Headless implementado (`registerHeadlessTask`), ainda **não validado em aparelho**: testar com o app fechado nos recentes (teste 5 do plano).
-- schedule e autorização por token (JWT) não implementados.
+- Autorização JWT implementada (`Authorization`), **não validada** contra um backend real que devolva 401 (teste 7).
+- schedule não implementado.
 - Elasticidade usa heurística própria (até 10x o filtro) e pode ser grosseira para motorista;
   prefira `disableElasticity: true`.
 - Android depende do Google Play Services.

@@ -86,7 +86,22 @@ object HttpSync {
         return body
     }
 
+    /**
+     * Sends one request. Refreshes an expiring token first, and on a 401 refreshes once and
+     * retries; if that fails the records stay queued.
+     */
     private fun post(url: String, records: List<JSONObject>, batch: Boolean): Boolean {
+        Auth.refreshIfNeeded()
+        var status = send(url, records, batch)
+        if (status == 401 && Auth.canRefresh()) {
+            Logger.i(TAG, "HTTP 401; refreshing the access token and retrying once")
+            if (Auth.refresh()) status = send(url, records, batch)
+        }
+        return status in 200..299
+    }
+
+    /** Performs the HTTP call and returns its status code (also emitted as an `http` event). */
+    private fun send(url: String, records: List<JSONObject>, batch: Boolean): Int {
         val timeout = Settings.int("http", "timeout", 60000)
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
@@ -95,6 +110,8 @@ object HttpSync {
             conn.readTimeout = timeout
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
+            // Set before the user's headers so an explicit `Authorization` header still wins.
+            Auth.header()?.let { conn.setRequestProperty("Authorization", it) }
             Settings.obj("http", "headers")?.let { h ->
                 h.keys().forEach { conn.setRequestProperty(it, h.get(it).toString()) }
             }
@@ -106,7 +123,7 @@ object HttpSync {
             val ok = status in 200..299
             Logger.i(TAG, "POST ${records.size} record(s) -> HTTP $status")
             EventBus.emit("http", mapOf("success" to ok, "status" to status, "responseText" to text))
-            return ok
+            return status
         } finally {
             conn.disconnect()
         }

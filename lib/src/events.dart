@@ -126,6 +126,26 @@ class HttpEvent {
   }
 }
 
+/// Result of a token refresh attempt.
+class AuthorizationEvent {
+  final bool success;
+  final String? error;
+
+  /// Parsed JSON body of the refresh response, empty when it was not JSON.
+  final Map<String, dynamic> response;
+
+  const AuthorizationEvent({required this.success, this.error, this.response = const {}});
+
+  factory AuthorizationEvent.fromMap(Object? raw) {
+    final m = _m(raw);
+    return AuthorizationEvent(
+      success: m['success'] == true,
+      error: m['error'] as String?,
+      response: _m(m['response']),
+    );
+  }
+}
+
 class LocationError {
   final int code;
   const LocationError(this.code);

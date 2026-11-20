@@ -10,7 +10,9 @@ object Settings {
     private var cfg = JSONObject()
 
     /** Keys whose value is replaced wholesale instead of deep-merged. */
-    private val replaceKeys = setOf("headers", "params", "extras", "schedule", "triggerActivities")
+    private val replaceKeys = setOf(
+        "headers", "params", "extras", "schedule", "triggerActivities", "refreshPayload", "refreshHeaders",
+    )
 
     fun init(ctx: Context) {
         if (::prefs.isInitialized) return
@@ -75,6 +77,7 @@ object Settings {
                 "enableHeadless" to false,
                 "heartbeatInterval" to -1,
             ),
+            "authorization" to emptyMap<String, Any>(),
             "logger" to mapOf(
                 "debug" to false,
                 "logLevel" to "verbose",
@@ -123,6 +126,7 @@ object Settings {
     fun obj(g: String, k: String): JSONObject? = group(g).optJSONObject(k)
     fun array(g: String, k: String): org.json.JSONArray? = group(g).optJSONArray(k)
     fun int(g: String, k: String, def: Int = 0): Int = group(g).optInt(k, def)
+    fun long(g: String, k: String, def: Long = 0L): Long = group(g).optLong(k, def)
     fun double(g: String, k: String, def: Double = 0.0): Double = group(g).optDouble(k, def)
     fun bool(g: String, k: String, def: Boolean = false): Boolean = group(g).optBoolean(k, def)
     fun string(g: String, k: String, def: String = ""): String = group(g).optString(k, def)

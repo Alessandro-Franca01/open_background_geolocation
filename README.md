@@ -23,6 +23,7 @@ derived from the code of any commercial SDK. See [docs/CLEAN_ROOM.md](docs/CLEAN
 | HTTP sync (`autoSync`, batch, retry) | implemented, untested | planned |
 | Persistent logger (`Logger.getLog`) | implemented | planned |
 | `watchPosition` | implemented, untested | planned |
+| JWT authorization with token refresh (`Authorization`) | implemented, untested | planned |
 | headless (`registerHeadlessTask`) | implemented, untested | n/a |
 | schedule | planned | planned |
 
@@ -76,6 +77,28 @@ void main() {
 
 The task must be a top-level or static function. Call `registerHeadlessTask` on every app start so
 the stored callback handle stays valid after an app update.
+
+## Authorization (JWT)
+
+```dart
+Config(
+  http: HttpConfig(url: 'https://api.example.com/locations'),
+  authorization: Authorization(
+    accessToken: token,
+    refreshToken: refresh,
+    expires: expiresAtEpochSeconds,
+    refreshUrl: 'https://api.example.com/auth/refresh',
+    refreshPayload: {'refresh_token': '{refreshToken}'},
+  ),
+)
+```
+
+Uploads carry `Authorization: Bearer <accessToken>`. When the token is about to expire, or the
+server answers 401, the plugin POSTs the payload (form-encoded) to `refreshUrl`, reads
+`accessToken` / `access_token`, `refreshToken` / `refresh_token` and `expires` / `expires_in` from
+the JSON response, stores the pair and retries once. If the refresh fails the records stay queued.
+Listen with `BackgroundGeolocation.onAuthorization`. `Config.reset` defaults to true, so pass
+`reset: false` to `ready()` if you want the plugin to keep tokens it refreshed in an earlier run.
 
 ## Roadmap
 
