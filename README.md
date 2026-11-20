@@ -23,7 +23,8 @@ derived from the code of any commercial SDK. See [docs/CLEAN_ROOM.md](docs/CLEAN
 | HTTP sync (`autoSync`, batch, retry) | implemented, untested | planned |
 | Persistent logger (`Logger.getLog`) | implemented | planned |
 | `watchPosition` | implemented, untested | planned |
-| schedule, headless | planned | planned |
+| headless (`registerHeadlessTask`) | implemented, untested | n/a |
+| schedule | planned | planned |
 
 ## Usage
 
@@ -54,6 +55,27 @@ await bg.BackgroundGeolocation.start();
   nearest are active.
 - HTTP: a 2xx response deletes the uploaded records, anything else keeps them queued. Cleartext
   `http://` URLs need `usesCleartextTraffic` in your app manifest.
+
+## Headless (Android)
+
+With `AppConfig(stopOnTerminate: false, enableHeadless: true)` the plugin keeps tracking after the
+app is closed from the recents list and delivers events to a Dart callback that runs in a
+background engine:
+
+```dart
+@pragma('vm:entry-point')
+Future<void> headlessTask(bg.HeadlessEvent event) async {
+  if (event.event is bg.Location) { /* upload, log, ... */ }
+}
+
+void main() {
+  runApp(const MyApp());
+  bg.BackgroundGeolocation.registerHeadlessTask(headlessTask);
+}
+```
+
+The task must be a top-level or static function. Call `registerHeadlessTask` on every app start so
+the stored callback handle stays valid after an app update.
 
 ## Roadmap
 

@@ -146,7 +146,7 @@ se o aparelho estava carregando, e se houve interação do usuário com o app.
 ## 6. Pendências conhecidas no plugin
 
 - ~~Logger persistente~~ implementado (`Logger.getLog()`); ver `docs/PLANO_IMPLEMENTACAO.md`.
-- Eventos para o Dart são descartados sem tela (headless não implementado).
+- Headless implementado (`registerHeadlessTask`), ainda **não validado em aparelho**: testar com o app fechado nos recentes (teste 5 do plano).
 - schedule e autorização por token (JWT) não implementados.
 - Elasticidade usa heurística própria (até 10x o filtro) e pode ser grosseira para motorista;
   prefira `disableElasticity: true`.

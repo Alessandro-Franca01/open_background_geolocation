@@ -31,7 +31,14 @@ class OpenBackgroundGeolocationPlugin :
     /** Completion for an in-flight permission flow. */
     private var pendingPermission: ((Int) -> Unit)? = null
 
+    /** This instance's own event sink, so detaching never clears another engine's sink. */
+    private var mySink: EventChannel.EventSink? = null
+
+    /** True for the instance created inside the background (headless) engine. */
+    private var isHeadless = false
+
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        isHeadless = HeadlessTask.creating
         context = binding.applicationContext
         TrackingEngine.init(context)
         methods = MethodChannel(binding.binaryMessenger, "dev.openbg/methods")
@@ -41,18 +48,23 @@ class OpenBackgroundGeolocationPlugin :
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        TrackingEngine.stopAllWatchers()
+        // The background engine also loads this plugin; its teardown must not touch UI state.
+        if (!isHeadless) TrackingEngine.stopAllWatchers()
         methods.setMethodCallHandler(null)
         events.setStreamHandler(null)
-        EventBus.sink = null
+        releaseSink()
     }
 
     override fun onListen(arguments: Any?, sink: EventChannel.EventSink?) {
+        mySink = sink
         EventBus.sink = sink
     }
 
-    override fun onCancel(arguments: Any?) {
-        EventBus.sink = null
+    override fun onCancel(arguments: Any?) = releaseSink()
+
+    private fun releaseSink() {
+        if (EventBus.sink === mySink) EventBus.sink = null
+        mySink = null
     }
 
     // ----------------------------------------------------------------- activity
@@ -187,6 +199,11 @@ class OpenBackgroundGeolocationPlugin :
             "log" -> {
                 val q = args as Map<*, *>
                 Logger.log(q["level"] as? String ?: "info", "app", q["message"]?.toString() ?: "")
+                result.success(true)
+            }
+            "registerHeadlessTask" -> {
+                val q = args as Map<*, *>
+                HeadlessTask.register(context, (q["dispatcher"] as Number).toLong(), (q["callback"] as Number).toLong())
                 result.success(true)
             }
             "getProviderState" -> result.success(TrackingEngine.providerState(context))

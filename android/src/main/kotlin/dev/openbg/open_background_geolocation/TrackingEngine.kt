@@ -80,6 +80,7 @@ object TrackingEngine {
 
     fun init(ctx: Context) {
         app = ctx.applicationContext
+        EventBus.context = app
         Settings.init(app)
         Db.init(app)
     }
@@ -125,6 +126,8 @@ object TrackingEngine {
         GeofenceManager.init(app)
         GeofenceManager.unregisterAll()
         if (wasEnabled) EventBus.emit("enabledchange", false)
+        // Let the final `enabledchange` reach the headless task before the engine goes away.
+        main.postDelayed({ if (!Settings.enabled) HeadlessTask.shutdown() }, 2000)
     }
 
     fun changePace(isMoving: Boolean) {

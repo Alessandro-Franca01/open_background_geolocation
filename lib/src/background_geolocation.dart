@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:ui' show PluginUtilities;
 
 import 'package:flutter/services.dart';
 
 import 'config.dart';
 import 'events.dart';
+import 'headless.dart';
 import 'models.dart';
 
 const MethodChannel _methods = MethodChannel('dev.openbg/methods');
@@ -219,6 +221,29 @@ class BackgroundGeolocation {
   /// iOS 14+. No-op on Android.
   static Future<int> requestTemporaryFullAccuracy(String purpose) =>
       _invoke<int>('requestTemporaryFullAccuracy', purpose);
+
+  /// Android only. Registers [task] to receive events while the app has no UI (for example after
+  /// the user closes it from the recents list with `stopOnTerminate: false`). Requires
+  /// `AppConfig(enableHeadless: true)`.
+  ///
+  /// [task] must be a top-level or static function and should carry
+  /// `@pragma('vm:entry-point')` so it survives release-mode tree shaking.
+  static Future<bool> registerHeadlessTask(HeadlessTask task) async {
+    final dispatcher = PluginUtilities.getCallbackHandle(openBgHeadlessDispatcher);
+    final callback = PluginUtilities.getCallbackHandle(task);
+    if (dispatcher == null || callback == null) {
+      throw ArgumentError.value(
+        task,
+        'task',
+        'must be a top-level or static function (closures and instance methods cannot be '
+            'resolved in the background isolate)',
+      );
+    }
+    return _invoke<bool>('registerHeadlessTask', {
+      'dispatcher': dispatcher.toRawHandle(),
+      'callback': callback.toRawHandle(),
+    });
+  }
 
   static Future<int> startBackgroundTask() => _invoke<int>('startBackgroundTask');
   static Future<int> stopBackgroundTask(int taskId) =>

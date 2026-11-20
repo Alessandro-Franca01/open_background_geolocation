@@ -1,7 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:open_background_geolocation/open_background_geolocation.dart' as bg;
 
-void main() => runApp(const MyApp());
+/// Runs in a background isolate while the app has no UI (needs `enableHeadless: true` and
+/// `stopOnTerminate: false`). It writes to the plugin log so the result can be read afterwards.
+@pragma('vm:entry-point')
+Future<void> headlessTask(bg.HeadlessEvent event) async {
+  final e = event.event;
+  if (e is bg.Location) {
+    await bg.Logger.info('headless ${event.name}: ${e.coords.latitude}, ${e.coords.longitude}');
+  } else {
+    await bg.Logger.info('headless ${event.name}');
+  }
+}
+
+void main() {
+  runApp(const MyApp());
+  bg.BackgroundGeolocation.registerHeadlessTask(headlessTask);
+}
 
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
@@ -21,7 +36,7 @@ class _MyAppState extends State<MyApp> {
     bg.BackgroundGeolocation.onMotionChange((l) => _add('motion: ${l.isMoving}'));
     bg.BackgroundGeolocation.ready(const bg.Config(
       geolocation: bg.GeoConfig(desiredAccuracy: bg.DesiredAccuracy.high, distanceFilter: 10),
-      app: bg.AppConfig(stopOnTerminate: false, startOnBoot: true),
+      app: bg.AppConfig(stopOnTerminate: false, startOnBoot: true, enableHeadless: true),
       logger: bg.LoggerConfig(debug: true),
     )).then((s) => setState(() => _enabled = s.enabled));
   }
