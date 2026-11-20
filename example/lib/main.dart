@@ -28,6 +28,30 @@ class _MyAppState extends State<MyApp> {
 
   void _add(String line) => setState(() => _log.insert(0, line));
 
+  Future<void> _showLog(BuildContext context) async {
+    final text = await bg.Logger.getLog(order: 'DESC', limit: 300);
+    if (!context.mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Plugin log'),
+        content: SingleChildScrollView(
+          child: SelectableText(text.isEmpty ? '(empty)' : text, style: const TextStyle(fontSize: 11)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await bg.Logger.destroyLog();
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text('Clear'),
+          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
   Future<void> _toggle() async {
     final s = _enabled
         ? await bg.BackgroundGeolocation.stop()
@@ -38,7 +62,18 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) => MaterialApp(
         home: Scaffold(
-          appBar: AppBar(title: const Text('open_background_geolocation')),
+          appBar: AppBar(
+            title: const Text('open_background_geolocation'),
+            actions: [
+              Builder(
+                builder: (ctx) => IconButton(
+                  tooltip: 'Ver log',
+                  icon: const Icon(Icons.article_outlined),
+                  onPressed: () => _showLog(ctx),
+                ),
+              ),
+            ],
+          ),
           body: ListView(children: _log.map((e) => ListTile(title: Text(e))).toList()),
           floatingActionButton: FloatingActionButton(
             onPressed: _toggle,

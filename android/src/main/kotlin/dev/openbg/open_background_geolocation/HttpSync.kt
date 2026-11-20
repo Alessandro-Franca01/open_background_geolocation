@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * else leaves them queued for the next attempt. Runs on a single worker so uploads never overlap.
  */
 object HttpSync {
+    private const val TAG = "http"
     private val worker = Executors.newSingleThreadExecutor()
     private val queued = AtomicBoolean(false)
 
@@ -62,8 +63,10 @@ object HttpSync {
             }
         } catch (e: Exception) {
             error = e.message ?: "Upload failed"
+            Logger.e(TAG, "upload error: $error")
             EventBus.emit("http", mapOf("success" to false, "status" to 0, "responseText" to error))
         }
+        Logger.i(TAG, "sync finished: uploaded=${uploaded.size} error=${error ?: "none"} pending=${Db.count()}")
         cb(uploaded, error)
     }
 
@@ -101,6 +104,7 @@ object HttpSync {
             val stream = if (status < 400) conn.inputStream else conn.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
             val ok = status in 200..299
+            Logger.i(TAG, "POST ${records.size} record(s) -> HTTP $status")
             EventBus.emit("http", mapOf("success" to ok, "status" to status, "responseText" to text))
             return ok
         } finally {

@@ -160,6 +160,23 @@ class OpenBackgroundGeolocationPlugin :
                     if (err == null) result.success(records) else result.error("HTTP_ERROR", err, null)
                 }
             }
+            "getLog" -> {
+                val q = (args as? Map<*, *>) ?: emptyMap<String, Any?>()
+                result.success(
+                    Logger.get(
+                        q["order"] as? String ?: "ASC",
+                        (q["limit"] as? Number)?.toInt(),
+                        (q["start"] as? Number)?.toLong(),
+                        (q["end"] as? Number)?.toLong(),
+                    )
+                )
+            }
+            "destroyLog" -> result.success(Logger.clear())
+            "log" -> {
+                val q = args as Map<*, *>
+                Logger.log(q["level"] as? String ?: "info", "app", q["message"]?.toString() ?: "")
+                result.success(true)
+            }
             "getProviderState" -> result.success(TrackingEngine.providerState(context))
             "requestPermission" -> requestPermission { result.success(it) }
             // iOS-only / no-op on Android.

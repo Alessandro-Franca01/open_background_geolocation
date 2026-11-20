@@ -42,6 +42,10 @@ class GeofenceReceiver : BroadcastReceiver() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         TrackingEngine.init(context)
+        Logger.i(
+            "boot",
+            "received ${intent.action}; enabled=${Settings.enabled} startOnBoot=${Settings.bool("app", "startOnBoot")}"
+        )
         if (Settings.enabled && Settings.bool("app", "startOnBoot")) {
             Settings.didDeviceReboot = intent.action == Intent.ACTION_BOOT_COMPLETED
             if (Settings.trackingMode == 0) TrackingEngine.startGeofences(context)

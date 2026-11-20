@@ -5,4 +5,5 @@ export 'src/background_geolocation.dart';
 export 'src/config.dart';
 export 'src/enums.dart' hide enumFromName;
 export 'src/events.dart';
+export 'src/logger.dart';
 export 'src/models.dart';
