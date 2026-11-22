@@ -52,6 +52,39 @@ void main() {
     expect(s.enabled, isTrue);
     expect(s.trackingMode, TrackingMode.geofencesOnly);
     expect(s.isMoving, isFalse);
+    expect(s.stats, isNull);
+  });
+
+  test('State.stats parses battery counters', () {
+    final s = State.fromMap({
+      'enabled': true,
+      'stats': {
+        'running': true,
+        'sessionMillis': 3600000,
+        'gpsOnMillis': 900000,
+        'stationaryMillis': 2700000,
+        'fixCount': 180,
+        'httpRequestCount': 30,
+        'stationaryTransitions': 4,
+        'lastFixAt': '2026-11-21T12:00:00.000Z',
+      },
+    });
+    final st = s.stats!;
+    expect(st.running, isTrue);
+    expect(st.session, const Duration(hours: 1));
+    expect(st.gpsOn, const Duration(minutes: 15));
+    expect(st.stationary, const Duration(minutes: 45));
+    expect(st.fixCount, 180);
+    expect(st.httpRequestCount, 30);
+    expect(st.stationaryTransitions, 4);
+    expect(st.lastFixAt, '2026-11-21T12:00:00.000Z');
+  });
+
+  test('ActivityConfig serializes disableDistanceStopDetection', () {
+    expect(
+      const ActivityConfig(disableDistanceStopDetection: true).toMap(),
+      {'disableDistanceStopDetection': true},
+    );
   });
 
   test('GeofenceEvent.fromMap parses geofence record and timestamp', () {

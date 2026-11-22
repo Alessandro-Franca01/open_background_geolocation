@@ -139,6 +139,8 @@ Marque e preencha ao trazer os resultados.
 | 6 | Turno completo | 8 h | definitiva do app | sem lacunas inexplicadas; bateria aceitável | |
 | 7 | Backend real | 1 h | `http.url` real | 2xx apaga a fila; falha mantém e reenvia | |
 | 8 | Perda e retorno de rede | 30 min | `autoSync: true` | fila acumula offline e esvazia ao voltar a rede | |
+| 9 | Viatura parada, motor ligado, sem permissão de atividade física | 2 h (≥ 10 min parado) | sugerida em `docs/BATERIA.md` | log `-> STATIONARY ... byDistance=true` após `stopTimeout`; GPS religa ao sair ~100 m; `stats.gpsOn` bem menor que `stats.session` | |
+| 10 | Bateria: padrão × config sugerida | 2 h cada | padrão / `docs/BATERIA.md` | menor % de bateria/hora e menos `stats.httpRequestCount` com a sugerida | |
 
 Para cada teste, anote também: modelo e versão do Android, nível de bateria inicial e final,
 se o aparelho estava carregando, e se houve interação do usuário com o app.
@@ -149,7 +151,9 @@ se o aparelho estava carregando, e se houve interação do usuário com o app.
 - Headless implementado (`registerHeadlessTask`), ainda **não validado em aparelho**: testar com o app fechado nos recentes (teste 5 do plano).
 - Autorização JWT implementada (`Authorization`), **não validada** contra um backend real que devolva 401 (teste 7).
 - Schedule implementado (`startSchedule`), **não validado em aparelho**: o exemplo tem um botão que agenda uma janela de +1 a +3 min. Atenção ao Android 12+ (início de foreground service em segundo plano).
-- Elasticidade usa heurística própria (até 10x o filtro) e pode ser grosseira para motorista;
-  prefira `disableElasticity: true`.
+- Elasticidade usa heurística própria (até 10x o filtro, agora com histerese) e pode ser grosseira
+  para motorista; prefira `disableElasticity: true`.
+- Detecção de parada por distância (`disableDistanceStopDetection`) implementada, **não validada
+  em aparelho** (testes 9 e 10); ver `docs/BATERIA.md`.
 - Android depende do Google Play Services.
 - Nenhum comportamento de segundo plano foi validado em turnos longos.

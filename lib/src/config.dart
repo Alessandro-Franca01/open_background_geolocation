@@ -135,6 +135,12 @@ class ActivityConfig {
   final int? activityRecognitionInterval;
   final bool? disableMotionActivityUpdates;
   final bool? disableStopDetection;
+
+  /// Disables only the distance-based stop detection (Android): with it on (the default), GPS is
+  /// turned off when no fix moves farther than `stationaryRadius` for `stopTimeout` minutes, even
+  /// if activity recognition never reports STILL. The app can still drive the state with
+  /// `changePace`. `disableStopDetection` turns off both detectors.
+  final bool? disableDistanceStopDetection;
   final int? minimumActivityRecognitionConfidence;
   final int? motionTriggerDelay;
   final int? stopDetectionDelay;
@@ -145,6 +151,7 @@ class ActivityConfig {
     this.activityRecognitionInterval,
     this.disableMotionActivityUpdates,
     this.disableStopDetection,
+    this.disableDistanceStopDetection,
     this.minimumActivityRecognitionConfidence,
     this.motionTriggerDelay,
     this.stopDetectionDelay,
@@ -156,6 +163,7 @@ class ActivityConfig {
         'activityRecognitionInterval': activityRecognitionInterval,
         'disableMotionActivityUpdates': disableMotionActivityUpdates,
         'disableStopDetection': disableStopDetection,
+        'disableDistanceStopDetection': disableDistanceStopDetection,
         'minimumActivityRecognitionConfidence': minimumActivityRecognitionConfidence,
         'motionTriggerDelay': motionTriggerDelay,
         'stopDetectionDelay': stopDetectionDelay,

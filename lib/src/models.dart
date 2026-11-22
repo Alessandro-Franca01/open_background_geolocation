@@ -265,4 +265,46 @@ class State {
       raw: m,
     );
   }
+
+  /// Battery counters for the current tracking session (Android). Null on platforms that do not
+  /// report them.
+  TrackingStats? get stats =>
+      raw['stats'] is Map ? TrackingStats.fromMap(raw['stats'] as Map) : null;
+}
+
+/// How long GPS stayed on in the current tracking session, for battery analysis.
+class TrackingStats {
+  final bool running;
+  final Duration session;
+  final Duration gpsOn;
+  final Duration stationary;
+  final int fixCount;
+  final int httpRequestCount;
+  final int stationaryTransitions;
+  final String? lastFixAt;
+
+  const TrackingStats({
+    this.running = false,
+    this.session = Duration.zero,
+    this.gpsOn = Duration.zero,
+    this.stationary = Duration.zero,
+    this.fixCount = 0,
+    this.httpRequestCount = 0,
+    this.stationaryTransitions = 0,
+    this.lastFixAt,
+  });
+
+  factory TrackingStats.fromMap(Map<dynamic, dynamic> m) {
+    Duration ms(Object? v) => Duration(milliseconds: (v as num?)?.toInt() ?? 0);
+    return TrackingStats(
+      running: m['running'] == true,
+      session: ms(m['sessionMillis']),
+      gpsOn: ms(m['gpsOnMillis']),
+      stationary: ms(m['stationaryMillis']),
+      fixCount: (m['fixCount'] as num?)?.toInt() ?? 0,
+      httpRequestCount: (m['httpRequestCount'] as num?)?.toInt() ?? 0,
+      stationaryTransitions: (m['stationaryTransitions'] as num?)?.toInt() ?? 0,
+      lastFixAt: m['lastFixAt'] as String?,
+    );
+  }
 }
