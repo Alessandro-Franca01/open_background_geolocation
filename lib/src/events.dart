@@ -146,6 +146,46 @@ class AuthorizationEvent {
   }
 }
 
+/// A tracking failure reported by the native side (Android): the foreground service could not
+/// start, the location stream went silent, or the provider became unavailable.
+class TrackingErrorEvent {
+  /// `service_permission`, `service_start_not_allowed`, `location_silence` or `location_unavailable`.
+  final String code;
+  final String message;
+  final String? timestamp;
+
+  const TrackingErrorEvent({required this.code, this.message = '', this.timestamp});
+
+  factory TrackingErrorEvent.fromMap(Object? raw) {
+    final m = _m(raw);
+    return TrackingErrorEvent(
+      code: (m['code'] as String?) ?? 'unknown',
+      message: (m['message'] as String?) ?? '',
+      timestamp: m['timestamp'] as String?,
+    );
+  }
+
+  @override
+  String toString() => 'TrackingErrorEvent($code: $message)';
+}
+
+/// MOVING with GPS requested and no fix for [seconds] (`geolocation.silenceTimeout`), confirmed
+/// by a one-shot probe. The plugin re-issues the location request once per episode.
+class LocationSilenceEvent {
+  final int seconds;
+  final String? lastFixAt;
+
+  const LocationSilenceEvent({required this.seconds, this.lastFixAt});
+
+  factory LocationSilenceEvent.fromMap(Object? raw) {
+    final m = _m(raw);
+    return LocationSilenceEvent(
+      seconds: (m['seconds'] as num?)?.toInt() ?? 0,
+      lastFixAt: m['lastFixAt'] as String?,
+    );
+  }
+}
+
 class LocationError {
   final int code;
   const LocationError(this.code);

@@ -34,6 +34,8 @@ class _MyAppState extends State<MyApp> {
     super.initState();
     bg.BackgroundGeolocation.onLocation((l) => _add('${l.coords.latitude}, ${l.coords.longitude}'));
     bg.BackgroundGeolocation.onMotionChange((l) => _add('motion: ${l.isMoving}'));
+    bg.BackgroundGeolocation.onTrackingError((e) => _add('ERROR ${e.code}: ${e.message}'));
+    bg.BackgroundGeolocation.onLocationSilence((e) => _add('silent stream: no fix for ${e.seconds}s'));
     bg.BackgroundGeolocation.onSchedule((s) {
       _add('schedule event: enabled=${s.enabled}');
       setState(() => _enabled = s.enabled);
@@ -104,6 +106,35 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
+  Future<void> _showDiagnostics(BuildContext context) async {
+    final d = await bg.BackgroundGeolocation.getDiagnostics();
+    if (!context.mounted) return;
+    final st = d.stats;
+    String min(Duration? x) => x == null ? '-' : '${x.inMinutes} min';
+    final lines = <String>[
+      'Service: ${d.serviceState}${d.serviceStateAt == null ? '' : ' (${d.serviceStateAt})'}',
+      'Last error: ${d.lastError == null ? 'none' : '${d.lastErrorCode} — ${d.lastError!['message']} (${d.lastError!['timestamp']})'}',
+      'Enabled: ${d.enabled}   moving: ${d.isMoving}   location available: ${d.locationAvailable ?? '?'}',
+      'Provider: ${d.provider}',
+      'Background permission: ${d.backgroundPermission}   activity: ${d.activityPermission}',
+      'Notifications enabled: ${d.notificationsEnabled}',
+      'Ignoring battery optimizations: ${d.ignoringBatteryOptimizations}   power save: ${d.powerSaveMode}',
+      'App in foreground: ${d.appInForeground}   SDK ${d.sdk}   ${d.device}',
+      'Session: ${min(st?.session)}   GPS on: ${min(st?.gpsOn)}   stationary: ${min(st?.stationary)}',
+      'Fixes: ${st?.fixCount ?? 0}   HTTP requests: ${st?.httpRequestCount ?? 0}   last fix: ${st?.lastFixAt ?? '-'}',
+    ];
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Diagnostics'),
+        content: SingleChildScrollView(
+          child: SelectableText(lines.join('\n\n'), style: const TextStyle(fontSize: 12)),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      ),
+    );
+  }
+
   Future<void> _toggle() async {
     final s = _enabled
         ? await bg.BackgroundGeolocation.stop()
@@ -126,6 +157,13 @@ class _MyAppState extends State<MyApp> {
                 tooltip: _watchId == null ? 'Iniciar watch' : 'Parar watch',
                 icon: Icon(_watchId == null ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                 onPressed: _toggleWatch,
+              ),
+              Builder(
+                builder: (ctx) => IconButton(
+                  tooltip: 'Diagnóstico',
+                  icon: const Icon(Icons.health_and_safety_outlined),
+                  onPressed: () => _showDiagnostics(ctx),
+                ),
               ),
               Builder(
                 builder: (ctx) => IconButton(

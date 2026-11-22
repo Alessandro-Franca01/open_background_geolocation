@@ -22,6 +22,7 @@ import com.google.android.gms.location.DetectedActivity
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
+import com.google.android.gms.location.LocationAvailability
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
@@ -45,6 +46,7 @@ import kotlin.math.min
 object TrackingEngine {
     private const val STATIONARY_FENCE_ID = "obg_stationary"
     private const val DISTANCE_CHECK_MS = 60_000L
+    private const val SILENCE_PROBE_MS = 30_000L
     private const val TAG = "engine"
 
     private lateinit var app: Context
@@ -59,6 +61,8 @@ object TrackingEngine {
     private val elasticity = ElasticityGate()
     private val elasticityFactor: Double get() = elasticity.current
     private val stopDetector = StopDetector()
+    private val silenceGate = SilenceGate()
+    private val silenceCheck = Runnable { onSilence() }
 
     /**
      * Set when the distance detector (not activity recognition) put the engine in STATIONARY: an
@@ -121,7 +125,11 @@ object TrackingEngine {
         EventBus.context = app
         Settings.init(app)
         Db.init(app)
+        Diagnostics.init(app)
     }
+
+    /** True while the engine is running inside the foreground service. */
+    val isRunning: Boolean get() = running
 
     // ------------------------------------------------------------------ public control
 
@@ -243,6 +251,7 @@ object TrackingEngine {
         Logger.i(TAG, "end(): engine stopped")
         cancelStopTimer()
         main.removeCallbacks(distanceCheck)
+        main.removeCallbacks(silenceCheck)
         suppressActivityWake = false
         main.removeCallbacks(heartbeat)
         removeLocationUpdates()
@@ -276,7 +285,71 @@ object TrackingEngine {
         lastLocation?.let { stopDetector.seed(it.latitude, it.longitude, movingSince) }
         main.removeCallbacks(distanceCheck)
         main.postDelayed(distanceCheck, DISTANCE_CHECK_MS)
+        silenceGate.reset()
+        scheduleSilenceCheck()
         requestLocationUpdates()
+    }
+
+    // ------------------------------------------------------------------ silent stream
+
+    private fun scheduleSilenceCheck() {
+        main.removeCallbacks(silenceCheck)
+        val seconds = Settings.int("geolocation", "silenceTimeout", 120)
+        if (seconds > 0 && running && moving) main.postDelayed(silenceCheck, seconds * 1000L)
+    }
+
+    /**
+     * MOVING with GPS requested and no fix for `silenceTimeout`. With a distance filter that can
+     * just mean "did not move", so a one-shot probe decides: a fix means the stream is only
+     * filtered; none means it is mute, which is reported and the request re-issued once.
+     */
+    @SuppressLint("MissingPermission")
+    private fun onSilence() {
+        if (!running || !moving) return
+        val seconds = Settings.int("geolocation", "silenceTimeout", 120)
+        val client = fused ?: return
+        if (!hasLocationPermission(app)) {
+            reportSilence(seconds, "no fix for ${seconds}s while MOVING: location permission revoked")
+            return
+        }
+        Logger.w(TAG, "no fix for ${seconds}s while MOVING; probing with getCurrentLocation")
+        val request = CurrentLocationRequest.Builder()
+            .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+            .setDurationMillis(SILENCE_PROBE_MS)
+            .setMaxUpdateAgeMillis(0)
+            .build()
+        client.getCurrentLocation(request, null)
+            .addOnSuccessListener { loc ->
+                if (!running || !moving) return@addOnSuccessListener
+                if (loc != null) {
+                    Logger.i(TAG, "silence probe got a fix (acc=${loc.accuracy}m): stream is only filtered")
+                    silenceGate.onFix()
+                    stopDetector.onFix(
+                        loc.latitude, loc.longitude,
+                        if (loc.hasAccuracy()) loc.accuracy.toDouble() else 0.0,
+                        System.currentTimeMillis(), stationaryRadius().toDouble(),
+                    )
+                    scheduleSilenceCheck()
+                } else {
+                    reportSilence(seconds, "no fix for ${seconds}s while MOVING and the probe found none")
+                }
+            }
+            .addOnFailureListener {
+                if (running && moving) reportSilence(seconds, "silence probe failed: ${it.message}")
+            }
+    }
+
+    private fun reportSilence(seconds: Int, message: String) {
+        Diagnostics.record(DiagnosticsLogic.LOCATION_SILENCE, message)
+        EventBus.emit(
+            "locationsilence",
+            mapOf("seconds" to seconds, "lastFixAt" to if (lastFixAt > 0) isoTimestamp(lastFixAt) else null)
+        )
+        if (silenceGate.onSilent()) {
+            Logger.w(TAG, "re-issuing the location request after a silent stream")
+            requestLocationUpdates()
+        }
+        scheduleSilenceCheck()
     }
 
     /** Adds the time spent in the current state to the session counters. */
@@ -296,6 +369,7 @@ object TrackingEngine {
         )
         cancelStopTimer()
         main.removeCallbacks(distanceCheck)
+        main.removeCallbacks(silenceCheck)
         removeLocationUpdates()
         accumulateStateTime()
         moving = false
@@ -375,6 +449,19 @@ object TrackingEngine {
             override fun onLocationResult(result: LocationResult) {
                 for (loc in result.locations) onLocation(loc)
             }
+
+            override fun onLocationAvailability(availability: LocationAvailability) {
+                val ok = availability.isLocationAvailable
+                if (ok == Diagnostics.locationAvailable) return
+                Diagnostics.locationAvailable = ok
+                Logger.i(TAG, "location availability changed: available=$ok")
+                if (!ok) {
+                    Diagnostics.record(
+                        DiagnosticsLogic.LOCATION_UNAVAILABLE,
+                        "fused provider reports location unavailable (GPS off, no signal or restricted)"
+                    )
+                }
+            }
         }
         locationCallback = cb
         client.requestLocationUpdates(builder.build(), cb, Looper.getMainLooper())
@@ -387,6 +474,9 @@ object TrackingEngine {
 
     private fun onLocation(loc: android.location.Location) {
         if (!running || !moving) return
+        // Any delivered fix, even one filtered below, proves the stream is alive.
+        silenceGate.onFix()
+        scheduleSilenceCheck()
         val forced = pendingMotionChange
         val threshold = Settings.obj("geolocation", "filter")
             ?.optDouble("trackingAccuracyThreshold", 100.0) ?: 100.0
@@ -784,9 +874,9 @@ object TrackingEngine {
 
     // ------------------------------------------------------------------ power state
 
-    private fun isIgnoringBatteryOptimizations(): Boolean = runCatching {
-        val pm = app.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        pm.isIgnoringBatteryOptimizations(app.packageName)
+    fun isIgnoringBatteryOptimizations(ctx: Context = app): Boolean = runCatching {
+        val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        pm.isIgnoringBatteryOptimizations(ctx.packageName)
     }.getOrDefault(false)
 
     /** Power-save and Doze transitions: the usual suspects for silent gaps in tracking. */
@@ -881,4 +971,10 @@ object TrackingEngine {
     fun hasLocationPermission(ctx: Context): Boolean =
         granted(Manifest.permission.ACCESS_FINE_LOCATION, ctx) ||
             granted(Manifest.permission.ACCESS_COARSE_LOCATION, ctx)
+
+    fun hasBackgroundPermission(ctx: Context): Boolean =
+        Build.VERSION.SDK_INT < 29 || granted(Manifest.permission.ACCESS_BACKGROUND_LOCATION, ctx)
+
+    fun hasActivityPermission(ctx: Context): Boolean =
+        Build.VERSION.SDK_INT < 29 || granted(Manifest.permission.ACTIVITY_RECOGNITION, ctx)
 }

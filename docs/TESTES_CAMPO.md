@@ -141,6 +141,8 @@ Marque e preencha ao trazer os resultados.
 | 8 | Perda e retorno de rede | 30 min | `autoSync: true` | fila acumula offline e esvazia ao voltar a rede | |
 | 9 | Viatura parada, motor ligado, sem permissão de atividade física | 2 h (≥ 10 min parado) | sugerida em `docs/BATERIA.md` | log `-> STATIONARY ... byDistance=true` após `stopTimeout`; GPS religa ao sair ~100 m; `stats.gpsOn` bem menor que `stats.session` | |
 | 10 | Bateria: padrão × config sugerida | 2 h cada | padrão / `docs/BATERIA.md` | menor % de bateria/hora e menos `stats.httpRequestCount` com a sugerida | |
+| 11 | Boot com permissão só "Ao usar o app" (Android 14+) | 10 min | `startOnBoot: true` | app **não** cai; `getDiagnostics().lastErrorCode == service_permission`; ao abrir o app, `serviceState == running` | |
+| 12 | Fluxo mudo | 10 min | em movimento, aparelho em local sem sinal (garagem) | log da sondagem; sem posição → `locationsilence` e reabertura do pedido | |
 
 Para cada teste, anote também: modelo e versão do Android, nível de bateria inicial e final,
 se o aparelho estava carregando, e se houve interação do usuário com o app.
@@ -155,5 +157,7 @@ se o aparelho estava carregando, e se houve interação do usuário com o app.
   para motorista; prefira `disableElasticity: true`.
 - Detecção de parada por distância (`disableDistanceStopDetection`) implementada, **não validada
   em aparelho** (testes 9 e 10); ver `docs/BATERIA.md`.
+- Proteção do início do serviço, `getDiagnostics` e fluxo mudo implementados, **não validados em
+  aparelho** (testes 11 e 12); ver `docs/PLANO_DIAGNOSTICO.md`.
 - Android depende do Google Play Services.
 - Nenhum comportamento de segundo plano foi validado em turnos longos.

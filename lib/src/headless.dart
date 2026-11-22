@@ -56,6 +56,10 @@ HeadlessEvent parseHeadlessEvent(String name, Object? data) {
       parsed = _flag(data);
     case 'schedule':
       parsed = State.fromMap(data as Map);
+    case 'trackingerror':
+      parsed = TrackingErrorEvent.fromMap(data);
+    case 'locationsilence':
+      parsed = LocationSilenceEvent.fromMap(data);
     default:
       parsed = data;
   }
