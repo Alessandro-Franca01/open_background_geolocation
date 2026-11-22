@@ -10,6 +10,7 @@
 | 4. JWT | feito (Android), testes JVM; não validado contra backend real |
 | 5. Schedule | feito (Android), testes JVM; não validado em aparelho |
 | 6. iOS | código escrito, **nunca compilado nem executado** (sem Mac); ver `docs/IOS_VALIDACAO.md` |
+| Bateria (Android) | detecção de parada por distância, histerese da elasticidade e `stats`; testes JVM; **não validado em aparelho**; ver `docs/PLANO_BATERIA.md` e `docs/BATERIA.md` |
 
 ## Contexto
 

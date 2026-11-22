@@ -9,6 +9,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Uploads queued locations to `http.url`. A 2xx response deletes the uploaded records; anything
@@ -18,6 +19,11 @@ object HttpSync {
     private const val TAG = "http"
     private val worker = Executors.newSingleThreadExecutor()
     private val queued = AtomicBoolean(false)
+    private val requests = AtomicInteger(0)
+
+    /** HTTP requests sent since the tracking session began; each one wakes the data radio. */
+    fun requestCount(): Int = requests.get()
+    fun resetRequestCount() = requests.set(0)
 
     /** Uploads if `autoSync` is on, `url` is set and the threshold / network constraints allow. */
     fun autoSync(ctx: Context) {
@@ -103,6 +109,7 @@ object HttpSync {
     /** Performs the HTTP call and returns its status code (also emitted as an `http` event). */
     private fun send(url: String, records: List<JSONObject>, batch: Boolean): Int {
         val timeout = Settings.int("http", "timeout", 60000)
+        requests.incrementAndGet()
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = Settings.string("http", "method", "POST").uppercase()

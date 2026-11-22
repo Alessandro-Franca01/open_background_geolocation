@@ -51,6 +51,7 @@ object Settings {
                 "minimumActivityRecognitionConfidence" to 75,
                 "motionTriggerDelay" to 0,
                 "disableStopDetection" to false,
+                "disableDistanceStopDetection" to false,
                 "disableMotionActivityUpdates" to false,
                 "stopOnStationary" to false,
             ),
@@ -173,6 +174,7 @@ object Settings {
         m["didDeviceReboot"] = didDeviceReboot
         m["didLaunchInBackground"] = false
         m["isFirstBoot"] = isFirstBoot
+        m["stats"] = TrackingEngine.stats()
         return m
     }
 }

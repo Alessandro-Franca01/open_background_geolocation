@@ -44,6 +44,7 @@ import kotlin.math.min
  */
 object TrackingEngine {
     private const val STATIONARY_FENCE_ID = "obg_stationary"
+    private const val DISTANCE_CHECK_MS = 60_000L
     private const val TAG = "engine"
 
     private lateinit var app: Context
@@ -55,7 +56,26 @@ object TrackingEngine {
     private var pendingMotionChange = false
     private var lastLocation: android.location.Location? = null
     private var lastActivity: Pair<String, Int> = "unknown" to 0
-    private var elasticityFactor = 1.0
+    private val elasticity = ElasticityGate()
+    private val elasticityFactor: Double get() = elasticity.current
+    private val stopDetector = StopDetector()
+
+    /**
+     * Set when the distance detector (not activity recognition) put the engine in STATIONARY: an
+     * idling vehicle keeps reporting `in_vehicle`, which would turn GPS back on at once. Cleared by
+     * leaving the stationary geofence, by `changePace(true)` or by activity recognition reporting STILL.
+     */
+    private var suppressActivityWake = false
+
+    // Battery stats for the current session (reset in begin()).
+    private var sessionStart = 0L
+    private var movingSince = 0L
+    private var stationarySince = 0L
+    private var gpsOnMillis = 0L
+    private var stationaryMillis = 0L
+    private var fixCount = 0
+    private var lastFixAt = 0L
+    private var stationaryTransitions = 0
     private var providerReceiver: BroadcastReceiver? = null
     private var powerReceiver: BroadcastReceiver? = null
     private var locationCallback: LocationCallback? = null
@@ -63,6 +83,24 @@ object TrackingEngine {
 
     private var stopTimerArmed = false
     private val stopTimer = Runnable { stopTimerArmed = false; onStopTimeout() }
+    private val distanceCheck = object : Runnable {
+        override fun run() {
+            if (!running || !moving) return
+            if (distanceStopEnabled()) {
+                val minutes = Settings.int("geolocation", "stopTimeout", 5)
+                if (stopDetector.shouldStop(System.currentTimeMillis(), minutes * 60_000L)) {
+                    Logger.i(
+                        TAG,
+                        "no displacement > ${stationaryRadius()}m for $minutes min; going STATIONARY " +
+                            "(stopOnStationary=${Settings.bool("activity", "stopOnStationary")})"
+                    )
+                    if (Settings.bool("activity", "stopOnStationary")) stop(app) else enterStationary(byDistance = true)
+                    return
+                }
+            }
+            main.postDelayed(this, DISTANCE_CHECK_MS)
+        }
+    }
     private val heartbeat = object : Runnable {
         override fun run() {
             if (!running) return
@@ -136,11 +174,47 @@ object TrackingEngine {
         if (isMoving) enterMoving() else enterStationary()
     }
 
+    /** Battery counters for the current session; exposed in the state map as `stats`. */
+    fun stats(): Map<String, Any?> {
+        val now = System.currentTimeMillis()
+        val gps = gpsOnMillis + if (running && moving && movingSince > 0) now - movingSince else 0
+        val still = stationaryMillis + if (running && !moving && stationarySince > 0) now - stationarySince else 0
+        return mapOf(
+            "running" to running,
+            "sessionMillis" to if (running && sessionStart > 0) now - sessionStart else 0L,
+            "gpsOnMillis" to gps,
+            "stationaryMillis" to still,
+            "fixCount" to fixCount,
+            "httpRequestCount" to HttpSync.requestCount(),
+            "stationaryTransitions" to stationaryTransitions,
+            "lastFixAt" to if (lastFixAt > 0) isoTimestamp(lastFixAt) else null,
+        )
+    }
+
+    private fun logStats(reason: String) {
+        val s = stats()
+        Logger.i(
+            TAG,
+            "stats ($reason): session=${(s["sessionMillis"] as Long) / 1000}s " +
+                "gpsOn=${(s["gpsOnMillis"] as Long) / 1000}s stationary=${(s["stationaryMillis"] as Long) / 1000}s " +
+                "fixes=${s["fixCount"]} httpRequests=${s["httpRequestCount"]} stops=${s["stationaryTransitions"]}"
+        )
+    }
+
     /** Called by [TrackingService] once it is in the foreground. */
     @SuppressLint("MissingPermission")
     fun begin() {
         if (running) return
         running = true
+        sessionStart = System.currentTimeMillis()
+        movingSince = 0L
+        stationarySince = 0L
+        gpsOnMillis = 0L
+        stationaryMillis = 0L
+        fixCount = 0
+        lastFixAt = 0L
+        stationaryTransitions = 0
+        HttpSync.resetRequestCount()
         Logger.purge()
         Logger.i(
             TAG,
@@ -163,9 +237,13 @@ object TrackingEngine {
 
     fun end() {
         if (!running) return
+        accumulateStateTime()
+        logStats("end")
         running = false
         Logger.i(TAG, "end(): engine stopped")
         cancelStopTimer()
+        main.removeCallbacks(distanceCheck)
+        suppressActivityWake = false
         main.removeCallbacks(heartbeat)
         removeLocationUpdates()
         removeStationaryGeofence()
@@ -186,21 +264,47 @@ object TrackingEngine {
         Logger.i(TAG, "-> MOVING (activity=${lastActivity.first}/${lastActivity.second})")
         cancelStopTimer()
         removeStationaryGeofence()
+        accumulateStateTime()
         moving = true
+        movingSince = System.currentTimeMillis()
         Settings.isMoving = true
         pendingMotionChange = true
-        elasticityFactor = 1.0
+        suppressActivityWake = false
+        elasticity.reset()
+        // A false wake (no real displacement) goes back to STATIONARY after stopTimeout.
+        stopDetector.reset()
+        lastLocation?.let { stopDetector.seed(it.latitude, it.longitude, movingSince) }
+        main.removeCallbacks(distanceCheck)
+        main.postDelayed(distanceCheck, DISTANCE_CHECK_MS)
         requestLocationUpdates()
     }
 
+    /** Adds the time spent in the current state to the session counters. */
+    private fun accumulateStateTime() {
+        val now = System.currentTimeMillis()
+        if (moving && movingSince > 0) gpsOnMillis += now - movingSince
+        if (!moving && stationarySince > 0) stationaryMillis += now - stationarySince
+        movingSince = 0L
+        stationarySince = 0L
+    }
+
     @SuppressLint("MissingPermission")
-    private fun enterStationary() {
-        Logger.i(TAG, "-> STATIONARY (activity=${lastActivity.first}/${lastActivity.second}); GPS updates off")
+    private fun enterStationary(byDistance: Boolean = false) {
+        Logger.i(
+            TAG,
+            "-> STATIONARY (activity=${lastActivity.first}/${lastActivity.second} byDistance=$byDistance); GPS updates off"
+        )
         cancelStopTimer()
+        main.removeCallbacks(distanceCheck)
         removeLocationUpdates()
+        accumulateStateTime()
         moving = false
+        stationarySince = System.currentTimeMillis()
+        stationaryTransitions++
+        suppressActivityWake = byDistance
         Settings.isMoving = false
         pendingMotionChange = false
+        logStats("stationary")
         val client = fused ?: return
         val emit = { loc: android.location.Location? ->
             if (loc != null) {
@@ -303,19 +407,27 @@ object TrackingEngine {
         val event = if (forced) "motionchange" else null
         pendingMotionChange = false
         record(loc, event, sample = false)
+        fixCount++
+        lastFixAt = System.currentTimeMillis()
+        stopDetector.onFix(
+            loc.latitude, loc.longitude,
+            if (loc.hasAccuracy()) loc.accuracy.toDouble() else 0.0,
+            lastFixAt, stationaryRadius().toDouble(),
+        )
         adjustElasticity(loc)
     }
 
-    /** Elasticity: widen the distance filter as speed grows, then re-issue the request. */
+    /** Elasticity: widen the distance filter as speed grows, then re-issue the request (with hysteresis). */
     private fun adjustElasticity(loc: android.location.Location) {
         if (Settings.bool("geolocation", "disableElasticity")) return
-        val kmh = loc.speed * 3.6
-        val factor = min(10.0, 1.0 + (kmh / 20.0).toInt())
-        if (factor != elasticityFactor) {
-            elasticityFactor = factor
-            requestLocationUpdates()
-        }
+        if (elasticity.offer(loc.speed.toDouble())) requestLocationUpdates()
     }
+
+    private fun stationaryRadius(): Int = max(Settings.int("geolocation", "stationaryRadius", 150), 100)
+
+    private fun distanceStopEnabled(): Boolean =
+        !Settings.bool("activity", "disableStopDetection") &&
+            !Settings.bool("activity", "disableDistanceStopDetection")
 
     // ------------------------------------------------------------------ recording
 
@@ -585,9 +697,19 @@ object TrackingEngine {
             } else if (name != "unknown") {
                 cancelStopTimer()
             }
-        } else if (name != "still" && name != "unknown" && isTrigger(name)) {
+        } else if (name == "still") {
+            if (suppressActivityWake) Logger.d(TAG, "activity STILL while stationary; activity wake re-enabled")
+            suppressActivityWake = false
+        } else if (name != "unknown" && isTrigger(name)) {
+            if (suppressActivityWake) {
+                Logger.v(TAG, "activity $name ignored: stopped by distance, waiting for the stationary geofence exit")
+                return
+            }
             val delay = Settings.int("activity", "motionTriggerDelay", 0).toLong()
-            main.postDelayed({ if (running && !moving && lastActivity.first != "still") enterMoving() }, delay)
+            main.postDelayed(
+                { if (running && !moving && !suppressActivityWake && lastActivity.first != "still") enterMoving() },
+                delay
+            )
         }
     }
 
@@ -622,7 +744,7 @@ object TrackingEngine {
     @SuppressLint("MissingPermission")
     private fun registerStationaryGeofence(loc: android.location.Location) {
         if (!hasLocationPermission(app)) return
-        val radius = max(Settings.int("geolocation", "stationaryRadius", 150), 100).toFloat()
+        val radius = stationaryRadius().toFloat()
         val fence = Geofence.Builder()
             .setRequestId(STATIONARY_FENCE_ID)
             .setCircularRegion(loc.latitude, loc.longitude, radius)
