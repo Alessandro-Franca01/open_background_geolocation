@@ -28,6 +28,7 @@ object Settings {
                 "distanceFilter" to 10.0,
                 "stationaryRadius" to 150,
                 "stopTimeout" to 5,
+                "silenceTimeout" to 120,
                 "locationUpdateInterval" to 1000,
                 "fastestLocationUpdateInterval" to -1,
                 "deferTime" to 0,

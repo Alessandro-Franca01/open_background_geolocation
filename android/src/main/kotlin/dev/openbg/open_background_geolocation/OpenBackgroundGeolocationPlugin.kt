@@ -110,9 +110,11 @@ class OpenBackgroundGeolocationPlugin :
                 val config = (args as? Map<*, *>) ?: emptyMap<String, Any?>()
                 val reset = config["reset"] as? Boolean ?: true
                 Settings.ready(config, reset)
+                resumeIfNeeded()
                 result.success(Settings.stateMap())
             }
             "getState" -> result.success(Settings.stateMap())
+            "getDiagnostics" -> result.success(Diagnostics.snapshot(context))
             "setConfig" -> {
                 Settings.update(args as Map<*, *>)
                 // A changed schedule takes effect immediately while the scheduler is running.
@@ -226,6 +228,17 @@ class OpenBackgroundGeolocationPlugin :
             "stopBackgroundTask" -> result.success(0)
             else -> result.notImplemented()
         }
+    }
+
+    /**
+     * Tracking is enabled but the engine is not running: typically a start refused at boot or by
+     * the schedule (Android 14+ with only "while in use"). With the app visible it can start now.
+     */
+    private fun resumeIfNeeded() {
+        if (!Settings.enabled || Settings.trackingMode != 1 || TrackingEngine.isRunning) return
+        if (!Diagnostics.appInForeground() || !TrackingEngine.hasLocationPermission(context)) return
+        Logger.i("plugin", "ready(): tracking is enabled but not running (service=${Diagnostics.serviceState}); resuming")
+        TrackingService.start(context)
     }
 
     private fun start(result: MethodChannel.Result) {

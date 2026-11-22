@@ -272,6 +272,81 @@ class State {
       raw['stats'] is Map ? TrackingStats.fromMap(raw['stats'] as Map) : null;
 }
 
+/// Tracking health from `BackgroundGeolocation.getDiagnostics()` (Android only).
+class Diagnostics {
+  /// `stopped`, `starting`, `running` or `failed`.
+  final String serviceState;
+  final String? serviceStateAt;
+
+  /// Last recorded error, persisted across restarts (see [TrackingErrorEvent] for the codes).
+  final Map<String, dynamic>? lastError;
+  final bool enabled;
+  final bool isMoving;
+
+  /// Last value reported by the fused provider; null before the first report.
+  final bool? locationAvailable;
+
+  /// Same map as `getProviderState()`: `enabled`, `gps`, `network`, `status`, `accuracyAuthorization`.
+  final Map<String, dynamic> provider;
+  final bool backgroundPermission;
+  final bool activityPermission;
+  final bool notificationsEnabled;
+  final bool ignoringBatteryOptimizations;
+  final bool powerSaveMode;
+  final bool appInForeground;
+  final int sdk;
+  final String device;
+  final TrackingStats? stats;
+
+  /// Raw map, for fields not modeled here.
+  final Map<String, dynamic> raw;
+
+  const Diagnostics({
+    this.serviceState = 'stopped',
+    this.serviceStateAt,
+    this.lastError,
+    this.enabled = false,
+    this.isMoving = false,
+    this.locationAvailable,
+    this.provider = const {},
+    this.backgroundPermission = false,
+    this.activityPermission = false,
+    this.notificationsEnabled = false,
+    this.ignoringBatteryOptimizations = false,
+    this.powerSaveMode = false,
+    this.appInForeground = false,
+    this.sdk = 0,
+    this.device = '',
+    this.stats,
+    this.raw = const {},
+  });
+
+  String? get lastErrorCode => lastError?['code'] as String?;
+
+  factory Diagnostics.fromMap(Map<dynamic, dynamic> r) {
+    final m = Map<String, dynamic>.from(r);
+    return Diagnostics(
+      serviceState: (m['serviceState'] as String?) ?? 'stopped',
+      serviceStateAt: m['serviceStateAt'] as String?,
+      lastError: m['lastError'] is Map ? Map<String, dynamic>.from(m['lastError'] as Map) : null,
+      enabled: m['enabled'] == true,
+      isMoving: m['isMoving'] == true,
+      locationAvailable: m['locationAvailable'] as bool?,
+      provider: m['provider'] is Map ? Map<String, dynamic>.from(m['provider'] as Map) : const {},
+      backgroundPermission: m['backgroundPermission'] == true,
+      activityPermission: m['activityPermission'] == true,
+      notificationsEnabled: m['notificationsEnabled'] == true,
+      ignoringBatteryOptimizations: m['ignoringBatteryOptimizations'] == true,
+      powerSaveMode: m['powerSaveMode'] == true,
+      appInForeground: m['appInForeground'] == true,
+      sdk: (m['sdk'] as num?)?.toInt() ?? 0,
+      device: (m['device'] as String?) ?? '',
+      stats: m['stats'] is Map ? TrackingStats.fromMap(m['stats'] as Map) : null,
+      raw: m,
+    );
+  }
+}
+
 /// How long GPS stayed on in the current tracking session, for battery analysis.
 class TrackingStats {
   final bool running;

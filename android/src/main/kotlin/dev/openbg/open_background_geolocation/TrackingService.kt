@@ -28,13 +28,32 @@ class TrackingService : Service() {
             return START_NOT_STICKY
         }
         val notification = buildNotification(this)
-        if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: SecurityException) {
+            // Android 14+: the `location` type needs a location permission usable right now.
+            return failStart(DiagnosticsLogic.SERVICE_PERMISSION, e)
+        } catch (e: IllegalStateException) {
+            // Android 12+: ForegroundServiceStartNotAllowedException (started from the background).
+            return failStart(DiagnosticsLogic.SERVICE_START_NOT_ALLOWED, e)
         }
+        Diagnostics.setServiceState(Diagnostics.RUNNING)
         TrackingEngine.begin()
         return START_STICKY
+    }
+
+    private fun failStart(code: String, e: Exception): Int {
+        Diagnostics.serviceFailed(
+            code,
+            "startForeground failed (${e.javaClass.simpleName}: ${e.message}); tracking resumes when the app " +
+                "is opened, or grant \"Allow all the time\" to start from the background"
+        )
+        stopSelf()
+        return START_NOT_STICKY
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -49,6 +68,7 @@ class TrackingService : Service() {
 
     override fun onDestroy() {
         Logger.i("service", "onDestroy")
+        if (Diagnostics.serviceState != Diagnostics.FAILED) Diagnostics.setServiceState(Diagnostics.STOPPED)
         TrackingEngine.end()
         super.onDestroy()
     }
@@ -58,12 +78,49 @@ class TrackingService : Service() {
         private const val CHANNEL_ID = "obg_tracking"
         private const val NOTIFICATION_ID = 7345
 
-        fun start(ctx: Context) {
-            ContextCompat.startForegroundService(ctx, Intent(ctx, TrackingService::class.java))
+        /**
+         * Starts the foreground service unless Android would refuse it. A refusal is recorded in
+         * [Diagnostics] (and emitted as `trackingerror`) instead of crashing the app. Returns
+         * whether the start was requested.
+         */
+        fun start(ctx: Context): Boolean {
+            val block = DiagnosticsLogic.locationServiceBlock(
+                Build.VERSION.SDK_INT,
+                TrackingEngine.hasLocationPermission(ctx),
+                TrackingEngine.hasBackgroundPermission(ctx),
+                Diagnostics.appInForeground(),
+            )
+            if (block != null) {
+                Diagnostics.serviceFailed(
+                    block,
+                    "foreground service not started: location permission is not usable from the background " +
+                        "(sdk=${Build.VERSION.SDK_INT}); tracking resumes when the app is opened, or grant " +
+                        "\"Allow all the time\""
+                )
+                return false
+            }
+            Diagnostics.setServiceState(Diagnostics.STARTING)
+            return try {
+                ContextCompat.startForegroundService(ctx, Intent(ctx, TrackingService::class.java))
+                true
+            } catch (e: IllegalStateException) {
+                Diagnostics.serviceFailed(
+                    DiagnosticsLogic.SERVICE_START_NOT_ALLOWED,
+                    "startForegroundService refused (${e.javaClass.simpleName}: ${e.message})"
+                )
+                false
+            } catch (e: SecurityException) {
+                Diagnostics.serviceFailed(DiagnosticsLogic.SERVICE_PERMISSION, "startForegroundService: ${e.message}")
+                false
+            }
         }
 
         fun stop(ctx: Context) {
-            ctx.startService(Intent(ctx, TrackingService::class.java).setAction(ACTION_STOP))
+            // startService throws from the background when the service is not running (e.g. after
+            // a failed start); there is nothing to stop in that case.
+            runCatching {
+                ctx.startService(Intent(ctx, TrackingService::class.java).setAction(ACTION_STOP))
+            }.onFailure { Logger.d("service", "stop: service not running (${it.javaClass.simpleName})") }
         }
 
         private fun buildNotification(ctx: Context): Notification {

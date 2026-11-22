@@ -55,6 +55,9 @@ class GeoConfig {
   final int? locationUpdateInterval;
   final bool? pausesLocationUpdatesAutomatically;
   final bool? showsBackgroundLocationIndicator;
+  /// Android: seconds without a fix while moving before a probe and, if it finds nothing, a
+  /// `locationsilence` event and one re-issue of the location request. Default 120; 0 disables.
+  final int? silenceTimeout;
   final int? stationaryRadius;
   final int? stopAfterElapsedMinutes;
   final int? stopTimeout;
@@ -80,6 +83,7 @@ class GeoConfig {
     this.locationUpdateInterval,
     this.pausesLocationUpdatesAutomatically,
     this.showsBackgroundLocationIndicator,
+    this.silenceTimeout,
     this.stationaryRadius,
     this.stopAfterElapsedMinutes,
     this.stopTimeout,
@@ -106,6 +110,7 @@ class GeoConfig {
         'locationUpdateInterval': locationUpdateInterval,
         'pausesLocationUpdatesAutomatically': pausesLocationUpdatesAutomatically,
         'showsBackgroundLocationIndicator': showsBackgroundLocationIndicator,
+        'silenceTimeout': silenceTimeout,
         'stationaryRadius': stationaryRadius,
         'stopAfterElapsedMinutes': stopAfterElapsedMinutes,
         'stopTimeout': stopTimeout,
@@ -119,6 +124,7 @@ class GeoConfig {
         distanceFilter: (m['distanceFilter'] as num?)?.toDouble(),
         stationaryRadius: (m['stationaryRadius'] as num?)?.toInt(),
         stopTimeout: (m['stopTimeout'] as num?)?.toInt(),
+        silenceTimeout: (m['silenceTimeout'] as num?)?.toInt(),
         locationUpdateInterval: (m['locationUpdateInterval'] as num?)?.toInt(),
         useSignificantChangesOnly: m['useSignificantChangesOnly'] as bool?,
         disableElasticity: m['disableElasticity'] as bool?,

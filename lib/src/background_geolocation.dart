@@ -215,6 +215,11 @@ class BackgroundGeolocation {
   static Future<ProviderChangeEvent> get providerState async =>
       ProviderChangeEvent.fromMap(await _invoke<Map>('getProviderState'));
 
+  /// Android only: service state, last error, permissions, battery settings and session stats,
+  /// to show why tracking is or is not working. Not implemented on iOS yet.
+  static Future<Diagnostics> getDiagnostics() async =>
+      Diagnostics.fromMap(await _invoke<Map>('getDiagnostics'));
+
   /// Requests location authorization. Returns the resulting status code.
   static Future<int> requestPermission() => _invoke<int>('requestPermission');
 
@@ -299,6 +304,15 @@ class BackgroundGeolocation {
 
   static Subscription onPowerSaveChange(void Function(bool) cb) => _subscribe<bool>(
       'powersavechange', (raw) => raw == true || (raw is Map && raw['enabled'] == true), cb);
+
+  /// Android only: the foreground service could not start, the stream went silent or the
+  /// provider became unavailable. Also delivered to the headless task.
+  static Subscription onTrackingError(void Function(TrackingErrorEvent) cb) =>
+      _subscribe<TrackingErrorEvent>('trackingerror', TrackingErrorEvent.fromMap, cb);
+
+  /// Android only: no fix for `geolocation.silenceTimeout` seconds while moving.
+  static Subscription onLocationSilence(void Function(LocationSilenceEvent) cb) =>
+      _subscribe<LocationSilenceEvent>('locationsilence', LocationSilenceEvent.fromMap, cb);
 
   static Subscription onSchedule(void Function(State) cb) =>
       _subscribe<State>('schedule', (raw) => State.fromMap(raw as Map), cb);

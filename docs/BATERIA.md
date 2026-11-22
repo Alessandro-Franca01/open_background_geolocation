@@ -60,6 +60,24 @@ await BackgroundGeolocation.ready(Config(
 - Peça ao usuário para tirar o app da otimização de bateria (Configurações → Apps → app →
   Bateria → "Sem restrições"). O log de `begin()` registra `ignoringBatteryOptimizations`.
 
+## Diagnóstico e falhas
+
+`BackgroundGeolocation.getDiagnostics()` (Android) mostra numa chamada por que o rastreamento
+está ou não funcionando: `serviceState` (`stopped`/`starting`/`running`/`failed`), `lastError`
+(persistido entre reinícios), permissões, notificações, otimização de bateria, `locationAvailable`
+e `stats`. Os erros também chegam por `onTrackingError` e pelo headless (`trackingerror`).
+
+| `lastError.code` | Significado | O que fazer |
+|---|---|---|
+| `service_permission` | Android 14+: o serviço não pôde iniciar em segundo plano (boot, schedule, restart) com permissão só "Ao usar o app"; ou sem permissão de localização | abrir o app retoma sozinho (`ready()`); para iniciar sem o app aberto, pedir "Permitir o tempo todo" |
+| `service_start_not_allowed` | Android 12+: o sistema recusou iniciar o serviço em primeiro plano a partir do segundo plano | abrir o app; verificar restrições de bateria do fabricante |
+| `location_silence` | em movimento, nenhuma posição em `silenceTimeout` s (padrão 120) e a sondagem não achou posição; o plugin reabre o pedido uma vez | ver `locationAvailable`, GPS do aparelho e economia de bateria |
+| `location_unavailable` | o provedor do Google informou localização indisponível (GPS desligado, sem sinal, restrição) | ver `provider.gps` e o ambiente (túnel, garagem) |
+
+O app nunca cai por falha do serviço: a falha é registrada e `enabled` continua `true`, então o
+rastreamento volta na próxima vez que o app abrir. `onLocationSilence` avisa o fluxo mudo;
+`geolocation.silenceTimeout: 0` desliga essa checagem.
+
 ## Medir
 
 `getState()` traz `stats` (Android) com os contadores da sessão atual:

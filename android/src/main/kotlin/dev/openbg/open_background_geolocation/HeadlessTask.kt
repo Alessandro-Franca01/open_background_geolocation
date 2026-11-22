@@ -24,7 +24,7 @@ object HeadlessTask {
     private val EVENTS = setOf(
         "location", "motionchange", "activitychange", "providerchange", "geofence",
         "geofenceschange", "heartbeat", "http", "connectivitychange", "enabledchange",
-        "powersavechange", "schedule", "authorization",
+        "powersavechange", "schedule", "authorization", "trackingerror", "locationsilence",
     )
 
     private var engine: FlutterEngine? = null
